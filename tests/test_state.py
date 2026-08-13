@@ -1,7 +1,15 @@
+"""Tests for the ResearchState TypedDict schema and initial state construction."""
+
 from src.state import ResearchState
 
 
 def test_research_state_has_required_fields():
+    """Verify ResearchState contains all fields required by the agent graph.
+
+    This test enforces the contract between state.py and all nodes that
+    read/write to the state dict. If a node references a field not in
+    this list, it will fail at runtime.
+    """
     required_fields = [
         "query",
         "product",
@@ -30,6 +38,13 @@ def test_research_state_has_required_fields():
 
 
 def test_initial_state_structure():
+    """Verify initial state can be constructed with correct types and defaults.
+
+    This test validates that the initial state dict matches the TypedDict
+    contract and that default values have the expected types (empty dicts,
+    empty lists, zero iterations, etc.).
+    """
+    # Build a complete initial state matching what main.py produces
     state: ResearchState = {
         "query": "test product",
         "product": {},

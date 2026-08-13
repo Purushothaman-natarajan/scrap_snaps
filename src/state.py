@@ -1,3 +1,5 @@
+"""TypedDict definitions for the LangGraph research agent state."""
+
 from __future__ import annotations
 
 from typing import TypedDict

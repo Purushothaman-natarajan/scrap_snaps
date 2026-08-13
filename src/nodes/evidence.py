@@ -1,3 +1,5 @@
+"""Evidence node - extract technical specifications from web pages."""
+
 from __future__ import annotations
 
 import logging
@@ -41,6 +43,8 @@ def evidence(state: ResearchState) -> dict:
     specs = state.get("specifications", {})
 
     if results:
+        # Use only the top search result for now. In a full system, we'd
+        # fetch multiple results and merge/deduplicate the extracted claims.
         url = results[0].get("url")
         page_text = fetch_page.invoke({"url": url})
 
@@ -55,6 +59,8 @@ def evidence(state: ResearchState) -> dict:
             for c in extraction.claims:
                 claim_dict = c.model_dump()
                 claim_dict["source"] = url
+                # All claims from web search are tagged as "web" source type.
+                # In a full system, this would be parsed from the URL or page metadata.
                 claim_dict["source_type"] = "web"
                 evidence_list.append(claim_dict)
                 specs[claim_dict["claim"]] = claim_dict["value"]

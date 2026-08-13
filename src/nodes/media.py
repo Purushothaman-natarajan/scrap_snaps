@@ -24,6 +24,8 @@ def media(state: ResearchState) -> dict:
 
     tasks = state.get("tasks", [])
     target_view = DEFAULT_TARGET_VIEW
+    # Extract the target view from the first find_images task.
+    # The planner may generate multiple tasks, but we process them one at a time.
     for t in tasks:
         if t.get("type") == "find_images":
             target_view = t.get("target")
@@ -36,6 +38,8 @@ def media(state: ResearchState) -> dict:
     discovered_views = state.get("discovered_views", {})
 
     if results:
+        # Process top 2 results to balance thoroughness vs. download time/cost.
+        # Each image goes through: download -> dedup -> vision analysis -> classify.
         for res in results[:2]:
             img_url = res.get("url")
             local_path = download_image.invoke({"url": img_url, "save_dir": DOWNLOAD_DIR})

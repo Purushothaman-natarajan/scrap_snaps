@@ -32,6 +32,8 @@ def route_after_planner(state: ResearchState) -> str:
         return "finalize"
 
     first_task = tasks[0].get("type")
+    # Route to the appropriate node based on the first task type.
+    # The planner generates tasks in priority order, so we only look at the first one.
     if first_task == "discover":
         return "discover"
     elif first_task == "verify_spec":
@@ -39,6 +41,7 @@ def route_after_planner(state: ResearchState) -> str:
     elif first_task == "find_images":
         return "media"
 
+    # Unknown task type or empty list -> finalize the run
     return "finalize"
 
 
@@ -56,6 +59,8 @@ def build_graph() -> StateGraph:
 
     builder.add_edge(START, "planner")
 
+    # Planner routes to the correct execution node based on the task type.
+    # Each task type maps to exactly one node: discover, evidence, or media.
     builder.add_conditional_edges(
         "planner",
         route_after_planner,
@@ -67,10 +72,14 @@ def build_graph() -> StateGraph:
         },
     )
 
+    # All execution nodes feed into verification, regardless of task type.
+    # This ensures every result is scored before coverage analysis.
     builder.add_edge("discover", "verify")
     builder.add_edge("evidence", "verify")
     builder.add_edge("media", "verify")
 
+    # After verification, coverage checks what's still missing.
+    # If gaps remain, the graph loops back to planner for another iteration.
     builder.add_edge("verify", "coverage")
 
     builder.add_conditional_edges(

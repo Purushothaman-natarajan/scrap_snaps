@@ -1,3 +1,5 @@
+"""Discovery node - identify the target product via web search and LLM extraction."""
+
 from __future__ import annotations
 
 import logging
@@ -53,10 +55,13 @@ def discovery(state: ResearchState) -> dict:
         candidates = [c.model_dump() for c in extraction.candidates]
     except Exception as e:
         logger.warning("Discovery LLM failed: %s", e)
+        # LLM failure fallback: use the raw query as a low-confidence candidate.
+        # confidence=0.5 signals to downstream nodes that this is unverified.
         candidates = [{"name": query, "canonical_name": query.upper(), "confidence": 0.5}]
 
     product = candidates[0] if candidates else None
 
+    # Prune completed discover tasks so they don't get re-executed in the next iteration
     tasks = [t for t in state.get("tasks", []) if t.get("type") != "discover"]
 
     return {

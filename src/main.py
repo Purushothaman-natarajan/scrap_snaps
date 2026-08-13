@@ -18,6 +18,8 @@ def run_research(query: str):
 
     graph = build_graph()
 
+    # Initial state: all fields start empty/zero. The planner will populate
+    # tasks, which then flow through discovery -> evidence/media -> verification.
     initial_state = {
         "query": query,
         "product": {},

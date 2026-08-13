@@ -6,7 +6,9 @@ build-backend = "setuptools.backends._legacy:_Backend"
 name = "scrap-snaps"
 version = "0.1.0"
 description = "Autonomous Product Research Agent powered by LangGraph"
+readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 dependencies = [
     "langgraph>=0.0.39",
     "langchain-core>=0.1.45",
@@ -33,6 +35,11 @@ dev = [
 
 [project.scripts]
 scrap-snaps = "src.main:main"
+
+[project.urls]
+Homepage = "https://github.com/Purushothaman-natarajan/scrap_snaps"
+Repository = "https://github.com/Purushothaman-natarajan/scrap_snaps"
+Issues = "https://github.com/Purushothaman-natarajan/scrap_snaps/issues"
 
 [tool.setuptools.packages.find]
 include = ["src*"]

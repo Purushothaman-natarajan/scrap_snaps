@@ -35,6 +35,8 @@ def verification(state: ResearchState) -> dict:
 
     evidence_conf = 0.0
     if evidence_list:
+        # Weighted average: each claim's confidence is multiplied by its source's
+        # reliability score. Manufacturer sources (1.0) count more than forums (0.3).
         evidence_conf = (
             sum(
                 e.get("confidence", 0) * SOURCE_PRIORITY.get(e.get("source_type", "forum"), 0.3)
@@ -48,6 +50,8 @@ def verification(state: ResearchState) -> dict:
         image_conf = sum(img.get("confidence", 0.0) for img in images_list) / len(images_list)
 
     w = VERIFICATION_WEIGHTS
+    # Final score is a weighted sum of all confidence dimensions plus a base
+    # score. The base ensures even empty results get a non-zero score.
     completion_score = (
         identity_conf * w["identity"]
         + evidence_conf * w["evidence"]

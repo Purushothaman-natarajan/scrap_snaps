@@ -65,6 +65,8 @@ def _can_fetch(url: str, user_agent: str = "*") -> bool:
             rp.read()
             _robot_parsers[base_url] = rp
         except Exception:
+            # Fail open: if robots.txt is unreachable or malformed, allow the request
+            # rather than blocking all scraping. Most sites don't restrict research bots.
             logger.debug("Could not fetch robots.txt for %s, allowing", base_url)
             return True
 
@@ -104,6 +106,8 @@ def search_web(query: str, limit: int = 10) -> list[dict]:
     except Exception as e:
         logger.warning("DuckDuckGo search failed: %s, attempting fallback", e)
         try:
+            # Fallback: scrape DuckDuckGo's HTML-only endpoint directly.
+            # This bypasses the API library but works when the DDGS client is rate-limited.
             _rate_limit()
             resp = httpx.get(
                 "https://html.duckduckgo.com/html/",
@@ -179,6 +183,8 @@ def fetch_page_js(url: str, wait_selector: str = "body") -> str:
         from playwright.sync_api import TimeoutError as PlaywrightTimeout
         from playwright.sync_api import sync_playwright
 
+        # Three-layer fallback: Playwright (JS) -> static fetch -> error.
+        # Most e-commerce sites need JS rendering; static fetch is the safe fallback.
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(user_agent=USER_AGENT)
@@ -201,9 +207,11 @@ def fetch_page_js(url: str, wait_selector: str = "body") -> str:
         text = soup.get_text(separator=" ", strip=True)
         return text[:PAGE_TEXT_LIMIT]
     except ImportError:
+        # Playwright not installed - graceful degradation to static HTTP
         logger.error("Playwright not installed. Run: playwright install chromium")
         return fetch_page.invoke({"url": url})
     except Exception as e:
+        # Any Playwright error (network, crash, etc.) falls back to static fetch
         logger.error("JS fetch failed for %s: %s, falling back to static", url, e)
         return fetch_page.invoke({"url": url})
 
@@ -261,6 +269,8 @@ def download_image(url: str, save_dir: str = DOWNLOAD_DIR) -> str:
 
     filename = url.split("/")[-1].split("?")[0]
     if not filename or "." not in filename:
+        # URL has no recognizable filename - generate one using MD5 hash
+        # to ensure uniqueness across different URLs
         ext = ".jpg"
         filename = f"image_{hashlib.md5(url.encode()).hexdigest()}{ext}"
 
@@ -278,6 +288,8 @@ def download_image(url: str, save_dir: str = DOWNLOAD_DIR) -> str:
             return ""
 
         content_type = response.headers.get("content-type", "")
+        # Validate the response is actually an image. Some URLs redirect to
+        # HTML error pages. Check both Content-Type header and file extension.
         if "image" not in content_type and not url.lower().endswith(
             (".jpg", ".jpeg", ".png", ".gif", ".webp")
         ):
@@ -324,6 +336,7 @@ def analyze_image(image_path: str) -> dict:
         response = llm.invoke([message])
 
         text = response.content.strip()
+        # LLMs often wrap JSON in markdown code fences - strip them before parsing
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
         elif "```" in text:
@@ -356,6 +369,9 @@ def deduplicate_images(image_paths: list[str]) -> list[str]:
 
         try:
             img = PILImage.open(path)
+            # Perceptual hash (pHash) detects visually similar images even if
+            # they differ in resolution, compression, or minor edits. This is
+            # more robust than exact hashing (md5/sha) for image deduplication.
             h = imagehash.phash(img)
             if h not in seen_hashes:
                 seen_hashes.add(h)

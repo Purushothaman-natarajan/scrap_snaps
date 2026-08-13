@@ -1,3 +1,5 @@
+"""Planner node - LLM-powered task generation and iteration budget control."""
+
 from __future__ import annotations
 
 import logging
@@ -38,6 +40,8 @@ def planner(state: ResearchState) -> dict:
 
     iterations += 1
 
+    # Iteration budget: prevent infinite loops by capping total planner invocations.
+    # Once exhausted, the graph routes to finalize regardless of remaining gaps.
     if iterations > max_iterations:
         return {"status": "max_iterations_reached", "tasks": [], "iterations": iterations}
 
@@ -72,12 +76,16 @@ def planner(state: ResearchState) -> dict:
         return {"tasks": new_tasks, "iterations": iterations}
     except Exception as e:
         logger.warning("Planner LLM failed: %s", e)
+        # Fallback heuristic: generate the most basic task for the current state.
+        # This keeps the agent moving forward even when the LLM is unavailable.
         if not state.get("product"):
+            # No product identified yet -> must discover first
             return {
                 "tasks": [{"type": "discover", "target": state.get("query", ""), "priority": 1.0}],
                 "iterations": iterations,
             }
         elif state.get("missing_views"):
+            # Product identified but missing images -> fetch the first missing view
             return {
                 "tasks": [
                     {

@@ -19,6 +19,8 @@ def coverage(state: ResearchState) -> dict:
     required_views = state.get("required_views", [])
     discovered_views = state.get("discovered_views", {})
 
+    # Views not yet discovered are considered missing. The coverage node
+    # compares required_views against discovered_views to find gaps.
     missing_views = [v for v in required_views if v not in discovered_views]
 
     status = "complete" if not missing_views else "incomplete"
