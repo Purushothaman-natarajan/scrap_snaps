@@ -1,35 +1,40 @@
-from typing import TypedDict, Any, List, Dict
+from __future__ import annotations
+
+from typing import TypedDict
+
 
 class ResearchState(TypedDict):
+    """TypedDict defining the full state schema for the research agent graph."""
+
     # User request
     query: str
 
     # Canonical identity
     product: dict
-    candidates: List[dict]
+    candidates: list[dict]
 
     # Discovery
-    search_queries: List[str]
-    searched_queries: List[str]
-    sources: List[dict]
+    search_queries: list[str]
+    searched_queries: list[str]
+    sources: list[dict]
 
     # Evidence
-    evidence: List[dict]
+    evidence: list[dict]
     specifications: dict
 
     # Media
-    images: List[dict]
-    videos: List[dict]
+    images: list[dict]
+    videos: list[dict]
 
     # Image coverage
-    required_views: List[str]
-    discovered_views: Dict[str, List[str]]
-    missing_views: List[str]
+    required_views: list[str]
+    discovered_views: dict[str, list[str]]
+    missing_views: list[str]
 
     # Autonomous control
-    tasks: List[dict]
-    completed_tasks: List[str]
-    failed_tasks: List[dict]
+    tasks: list[dict]
+    completed_tasks: list[str]
+    failed_tasks: list[dict]
 
     # Cost / safety
     iterations: int

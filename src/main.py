@@ -1,21 +1,23 @@
-import os
-from dotenv import load_dotenv
-from src.graph import build_graph
-from src.db import init_db
+"""Main entry point for the product research agent."""
 
-# Load environment variables
-load_dotenv()
+import logging
+
+from src.config import DATABASE_URL, MAX_ITERATIONS, RECURSION_LIMIT, REQUIRED_VIEWS, validate_env
+from src.db import init_db
+from src.graph import build_graph
+
+logger = logging.getLogger(__name__)
+
 
 def run_research(query: str):
-    print(f"Starting research for: {query}")
-    
-    # Init DB
-    db_url = os.getenv("DATABASE_URL", "sqlite:///research.db")
-    session = init_db(db_url)
-    print(f"Initialized Database at {db_url}")
-    
+    """Execute a research run for the given product query."""
+    logger.info("Starting research for: %s", query)
+
+    session = init_db(DATABASE_URL)
+    logger.info("Database initialized at %s", DATABASE_URL)
+
     graph = build_graph()
-    
+
     initial_state = {
         "query": query,
         "product": {},
@@ -27,41 +29,41 @@ def run_research(query: str):
         "specifications": {},
         "images": [],
         "videos": [],
-        # Standard views we want to acquire for a full dossier
-        "required_views": ["front", "back", "side", "top"], 
+        "required_views": REQUIRED_VIEWS,
         "discovered_views": {},
-        "missing_views": ["front", "back", "side", "top"],
+        "missing_views": REQUIRED_VIEWS.copy(),
         "tasks": [],
         "completed_tasks": [],
         "failed_tasks": [],
         "iterations": 0,
-        "max_iterations": 10, # Keep it low for testing
+        "max_iterations": MAX_ITERATIONS,
         "confidence": 0.0,
-        "status": "started"
+        "status": "started",
     }
 
-    print("\n--- Execution Trace ---\n")
-    # Stream the graph execution
-    for event in graph.stream(initial_state, {"recursion_limit": 50}):
+    logger.info("--- Execution Trace ---")
+    for event in graph.stream(initial_state, {"recursion_limit": RECURSION_LIMIT}):
         for key, value in event.items():
-            print(f"Finished Node: {key}")
-            # If you want verbose logging, uncomment the next line
-            # print(f"State Updates: {value}\n")
-    
-    print("\n--- Research Complete ---\n")
-    
-    # We could theoretically retrieve the final state and save it to the DB here
-    # or print out the final dossier.
-    
-    # Cleanup DB session
+            logger.info("Finished Node: %s", key)
+
+    logger.info("--- Research Complete ---")
     session.close()
 
-if __name__ == "__main__":
+
+def main():
+    """CLI entry point."""
     import sys
-    # For testing, you can pass a query as an argument, e.g. python -m src.main "Sony WH-1000XM5"
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
     query = "Sony WH-1000XM5" if len(sys.argv) < 2 else sys.argv[1]
-    
-    if not os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY") == "your_google_api_key_here":
-        print("WARNING: GOOGLE_API_KEY is not set in .env. LLM calls will fail.")
-        
+
+    validate_env()
     run_research(query)
+
+
+if __name__ == "__main__":
+    main()

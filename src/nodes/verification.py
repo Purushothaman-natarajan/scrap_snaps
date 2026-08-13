@@ -1,5 +1,13 @@
-from typing import Dict, Any
+"""Verification node - evaluate evidence quality and resolve conflicts."""
+
+from __future__ import annotations
+
+import logging
+
+from src.config import VERIFICATION_WEIGHTS
 from src.state import ResearchState
+
+logger = logging.getLogger(__name__)
 
 SOURCE_PRIORITY = {
     "manufacturer": 1.00,
@@ -12,35 +20,39 @@ SOURCE_PRIORITY = {
     "forum": 0.30,
 }
 
-def verification(state: ResearchState) -> Dict[str, Any]:
-    """
-    Verification Subgraph/Node
+
+def verification(state: ResearchState) -> dict:
+    """Verification Node.
+
     Resolves conflicts, evaluates evidence quality based on source priority.
     """
-    print("--- VERIFICATION NODE ---")
-    
+    logger.info("Verification node executing")
+
     evidence_list = state.get("evidence", [])
     images_list = state.get("images", [])
-    
-    # Calculate confidence scores
+
     identity_conf = state.get("product", {}).get("confidence", 0.0)
-    
-    # Mock evidence confidence (would resolve conflicts here)
+
     evidence_conf = 0.0
     if evidence_list:
-        evidence_conf = sum(e.get("confidence", 0) * SOURCE_PRIORITY.get(e.get("source_type", "forum"), 0.3) for e in evidence_list) / len(evidence_list)
-        
+        evidence_conf = (
+            sum(
+                e.get("confidence", 0) * SOURCE_PRIORITY.get(e.get("source_type", "forum"), 0.3)
+                for e in evidence_list
+            )
+            / len(evidence_list)
+        )
+
     image_conf = 0.0
     if images_list:
         image_conf = sum(img.get("confidence", 0.0) for img in images_list) / len(images_list)
-        
+
+    w = VERIFICATION_WEIGHTS
     completion_score = (
-        identity_conf * 0.30
-        + evidence_conf * 0.25
-        + image_conf * 0.30
-        + 0.15 # source quality base
+        identity_conf * w["identity"]
+        + evidence_conf * w["evidence"]
+        + image_conf * w["image"]
+        + w["base"]
     )
-    
-    return {
-        "confidence": completion_score
-    }
+
+    return {"confidence": completion_score}

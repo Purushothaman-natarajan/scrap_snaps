@@ -1,27 +1,29 @@
-import os
-from langchain_google_genai import ChatGoogleGenerativeAI
-from dotenv import load_dotenv
+"""LLM client configuration."""
 
-load_dotenv()
+import logging
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from src.config import GOOGLE_API_KEY, LLM_MODEL
+
+logger = logging.getLogger(__name__)
+
 
 def get_llm(temperature: float = 0.0):
-    """
-    Returns an instance of the Gemini LLM.
+    """Return an instance of the Gemini LLM.
+
     Requires GOOGLE_API_KEY to be set in the environment.
     """
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key or api_key == "your_google_api_key_here":
-        # Fallback/mock for local testing without key
-        print("WARNING: GOOGLE_API_KEY is missing or invalid. Calls to LLM will fail.")
-        
+    if not GOOGLE_API_KEY or GOOGLE_API_KEY == "your_google_api_key_here":
+        logger.warning("GOOGLE_API_KEY is missing or invalid. LLM calls will fail.")
+
     return ChatGoogleGenerativeAI(
-        model="gemini-1.5-pro-latest", # Recommended for vision and complex extraction
+        model=LLM_MODEL,
         temperature=temperature,
-        google_api_key=api_key
+        google_api_key=GOOGLE_API_KEY,
     )
 
+
 def get_vision_llm(temperature: float = 0.0):
-    """
-    Returns an instance of the Gemini Vision LLM.
-    """
-    return get_llm(temperature) # gemini-1.5-pro handles both text and vision
+    """Return an instance of the Gemini Vision LLM."""
+    return get_llm(temperature)
