@@ -25,6 +25,10 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "playwright>=1.40.0",
     "tenacity>=8.2.0",
+    "yt-dlp>=2024.1.1",
+    "opencv-python>=4.9.0",
+    "numpy>=1.26.0",
+    "scenedetect>=0.6.2",
 ]
 
 [project.optional-dependencies]

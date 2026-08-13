@@ -12,18 +12,29 @@ logger = logging.getLogger(__name__)
 def coverage(state: ResearchState) -> dict:
     """Coverage Node (Gap Analyzer).
 
-    Evaluates what's missing and decides if more research is needed.
+    Evaluates what's missing from both image search and video extraction.
+    Checks discovered_views (from all sources) against required_views.
     """
     logger.info("Coverage node executing")
 
     required_views = state.get("required_views", [])
     discovered_views = state.get("discovered_views", {})
 
-    # Views not yet discovered are considered missing. The coverage node
-    # compares required_views against discovered_views to find gaps.
+    # Views not yet discovered are considered missing.
+    # discovered_views is populated by both media.py and video_extract.py.
     missing_views = [v for v in required_views if v not in discovered_views]
 
     status = "complete" if not missing_views else "incomplete"
+
+    images_count = len(state.get("images", []))
+    videos_count = len(state.get("videos", []))
+    logger.info(
+        "Coverage: %d/%d views found, %d images, %d videos",
+        len(required_views) - len(missing_views),
+        len(required_views),
+        images_count,
+        videos_count,
+    )
 
     return {"missing_views": missing_views, "status": status}
 

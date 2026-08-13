@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 class Task(BaseModel):
     """A research task to be executed by the agent."""
 
-    type: str = Field(description="The type of task: 'discover', 'find_images', 'verify_spec'")
+    type: str = Field(
+        description="Task type: 'discover', 'find_images', 'find_videos', 'verify_spec'"
+    )
     target: str = Field(
         description="The target of the task (e.g. 'front view', 'weight', or the product query)"
     )
@@ -41,7 +43,6 @@ def planner(state: ResearchState) -> dict:
     iterations += 1
 
     # Iteration budget: prevent infinite loops by capping total planner invocations.
-    # Once exhausted, the graph routes to finalize regardless of remaining gaps.
     if iterations > max_iterations:
         return {"status": "max_iterations_reached", "tasks": [], "iterations": iterations}
 
@@ -60,13 +61,15 @@ def planner(state: ResearchState) -> dict:
     - Product Identified: {bool(state.get("product"))}
     - Specifications Found: {list(state.get("specifications", {}).keys())}
     - Missing Views: {state.get("missing_views", [])}
+    - Images Collected: {len(state.get("images", []))}
+    - Videos Processed: {len(state.get("videos", []))}
     - Failed Tasks: {len(state.get("failed_tasks", []))}
 
     Decide what tasks to execute next.
     If the product is not identified, output a 'discover' task.
-    If the product is identified but missing views, output 'find_images' tasks for those views.
-    If the product is identified but lacks specs (weight, dimensions, battery),
-    output 'verify_spec'.
+    If missing views and few images collected, output 'find_images' tasks.
+    If missing views and image search is slow, try 'find_videos' to extract from YouTube reviews.
+    If the product is identified but lacks specs, output 'verify_spec'.
     """
 
     try:
@@ -77,25 +80,36 @@ def planner(state: ResearchState) -> dict:
     except Exception as e:
         logger.warning("Planner LLM failed: %s", e)
         # Fallback heuristic: generate the most basic task for the current state.
-        # This keeps the agent moving forward even when the LLM is unavailable.
         if not state.get("product"):
-            # No product identified yet -> must discover first
             return {
                 "tasks": [{"type": "discover", "target": state.get("query", ""), "priority": 1.0}],
                 "iterations": iterations,
             }
         elif state.get("missing_views"):
-            # Product identified but missing images -> fetch the first missing view
-            return {
-                "tasks": [
-                    {
-                        "type": "find_images",
-                        "target": state.get("missing_views")[0],
-                        "priority": 0.9,
-                    }
-                ],
-                "iterations": iterations,
-            }
+            # Try image search first, then video extraction as alternative
+            images_count = len(state.get("images", []))
+            if images_count < 3:
+                return {
+                    "tasks": [
+                        {
+                            "type": "find_images",
+                            "target": state.get("missing_views")[0],
+                            "priority": 0.9,
+                        }
+                    ],
+                    "iterations": iterations,
+                }
+            else:
+                return {
+                    "tasks": [
+                        {
+                            "type": "find_videos",
+                            "target": state.get("missing_views")[0],
+                            "priority": 0.8,
+                        }
+                    ],
+                    "iterations": iterations,
+                }
         else:
             return {
                 "tasks": [{"type": "verify_spec", "target": "general", "priority": 0.8}],

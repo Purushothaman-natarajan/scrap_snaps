@@ -27,6 +27,7 @@ class ResearchState(TypedDict):
     # Media
     images: list[dict]
     videos: list[dict]
+    video_frames: dict[str, list[str]]
 
     # Image coverage
     required_views: list[str]

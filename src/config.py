@@ -40,6 +40,15 @@ MAX_IMAGE_RESULTS = int(os.getenv("MAX_IMAGE_RESULTS", "5"))
 PAGE_TEXT_LIMIT = int(os.getenv("PAGE_TEXT_LIMIT", "5000"))
 MAX_DOWNLOAD_SIZE = int(os.getenv("MAX_DOWNLOAD_SIZE", "10485760"))  # 10MB
 
+# Video extraction
+VIDEO_DOWNLOAD_DIR = os.getenv("VIDEO_DOWNLOAD_DIR", "downloads/videos")
+MAX_VIDEO_RESULTS = int(os.getenv("MAX_VIDEO_RESULTS", "2"))
+VIDEO_MIN_DURATION = int(os.getenv("VIDEO_MIN_DURATION", "180"))  # seconds
+VIDEO_MAX_DURATION = int(os.getenv("VIDEO_MAX_DURATION", "900"))  # seconds
+VIDEO_FRAME_INTERVAL = float(os.getenv("VIDEO_FRAME_INTERVAL", "2.0"))  # seconds
+VIDEO_MAX_RESOLUTION = int(os.getenv("VIDEO_MAX_RESOLUTION", "720"))
+AI_FRAME_SELECTION = os.getenv("AI_FRAME_SELECTION", "true").lower() == "true"
+
 # Verification scoring weights
 VERIFICATION_WEIGHTS = {
     "identity": float(os.getenv("VERIFY_WEIGHT_IDENTITY", "0.30")),
