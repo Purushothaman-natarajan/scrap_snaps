@@ -13,6 +13,7 @@ dependencies = [
     "langgraph>=0.0.39",
     "langchain-core>=0.1.45",
     "langchain-google-genai>=1.0.3",
+    "langchain-openai>=0.1.20",
     "duckduckgo-search>=5.3.0",
     "beautifulsoup4>=4.12.3",
     "pydantic>=2.7.0",
@@ -29,6 +30,7 @@ dependencies = [
     "opencv-python>=4.9.0",
     "numpy>=1.26.0",
     "scenedetect>=0.6.2",
+    "structlog>=24.1.0",
 ]
 
 [project.optional-dependencies]

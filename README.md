@@ -2,9 +2,31 @@
 
 Autonomous product research agent powered by LangGraph. Given a product query, it discovers the product, extracts technical specifications, collects images from multiple views, and builds a verified evidence dossier.
 
-## Architecture
+## Architecture Overview
 
-The agent is a LangGraph state machine with 8 nodes:
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        SCRAP_SNAPS ARCHITECTURE                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐          │
+│  │  config/ │    │  core/   │    │ agents/  │    │  nodes/  │          │
+│  │ settings │    │ registry │    │ business │    │  thin    │          │
+│  │ logging  │    │ graph    │    │  logic   │    │ wrappers │          │
+│  └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘          │
+│       │               │               │               │                 │
+│       └───────────────┴───────────────┴───────────────┘                 │
+│                               │                                         │
+│                    ┌──────────▼──────────┐                             │
+│                    │     tools/          │                             │
+│                    │  web/ media/ db/    │                             │
+│                    │  utils/             │                             │
+│                    └─────────────────────┘                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Graph Flow
 
 ```
                          ┌──────────┐
@@ -39,7 +61,76 @@ The agent is a LangGraph state machine with 8 nodes:
                                └──────────┘
 ```
 
-**Flow:** Planner generates tasks → Discovery/Evidence/Media/VideoExtract executes them → Verification scores quality → Coverage checks gaps → Planner decides next steps or finalizes.
+## Project Structure
+
+```
+scrap_snaps/
+├── .env.example              # Environment variable template
+├── .gitignore
+├── pyproject.toml            # Package config and dependencies
+├── requirements.txt          # Pip dependencies
+├── src/
+│   ├── __init__.py
+│   ├── config.py             # Backward-compatible config exports
+│   ├── graph.py              # Backward-compatible graph exports
+│   ├── tools.py              # Backward-compatible tool exports
+│   ├── llm.py                # Multi-provider LLM (Azure OpenAI + Google)
+│   ├── main.py               # CLI entry point
+│   ├── state.py              # ResearchState TypedDict definition
+│   ├── db.py                 # SQLAlchemy models and DB init
+│   │
+│   ├── config/               # Configuration package
+│   │   ├── __init__.py       # Backward-compatible exports
+│   │   ├── settings.py       # Pydantic Settings (env + validation)
+│   │   └── logging.py        # Structured logging (structlog)
+│   │
+│   ├── core/                 # Core infrastructure
+│   │   ├── __init__.py
+│   │   ├── graph.py          # Enhanced graph builder with registry
+│   │   └── registry.py       # Plugin registry for nodes/tools/agents
+│   │
+│   ├── agents/               # Business logic classes
+│   │   ├── __init__.py
+│   │   ├── base.py           # BaseAgent with common utilities
+│   │   ├── planner.py        # PlannerAgent (task generation)
+│   │   ├── researcher.py     # ResearchAgent (discovery + evidence)
+│   │   ├── media_collector.py# MediaAgent (images + videos)
+│   │   ├── verifier.py       # VerificationAgent (scoring)
+│   │   └── coverage.py       # CoverageAgent (gap analysis)
+│   │
+│   ├── nodes/                # Thin LangGraph node wrappers
+│   │   ├── __init__.py
+│   │   ├── planner.py        # → PlannerAgent
+│   │   ├── discovery.py      # → ResearchAgent
+│   │   ├── evidence.py       # → ResearchAgent
+│   │   ├── media.py          # → MediaAgent
+│   │   ├── video_extract.py  # → MediaAgent
+│   │   ├── verification.py   # → VerifierAgent
+│   │   └── coverage.py       # → CoverageAgent
+│   │
+│   ├── tools/                # Modular tool package
+│   │   ├── __init__.py       # Centralized tool registry
+│   │   ├── web/
+│   │   │   ├── search.py     # search_web, search_images, search_videos
+│   │   │   ├── fetch.py      # fetch_page, fetch_page_js, extract_structured_data
+│   │   │   └── robots.py     # check_robots
+│   │   ├── media/
+│   │   │   ├── images.py     # download_image, analyze_image, deduplicate_images
+│   │   │   └── video.py      # download_video, extract_frames, select_best_frames
+│   │   ├── db/
+│   │   │   └── evidence.py   # save_evidence
+│   │   └── utils/
+│   │       ├── http.py       # rate_limit, can_fetch, http_get
+│   │       └── hashing.py    # perceptual_hash, are_similar
+│   │
+│   └── db/                   # Database package
+│       ├── __init__.py
+│       └── (models in db.py)
+│
+└── tests/
+    ├── __init__.py
+    └── test_state.py
+```
 
 ## Installation
 
@@ -66,8 +157,85 @@ playwright install chromium
 
 # Set up environment variables
 cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
+# Edit .env and add your API keys
 ```
+
+## Configuration
+
+All configuration is via environment variables. Copy `.env.example` to `.env` and edit.
+
+### LLM Provider (Azure OpenAI with Gemini)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `azure` | LLM provider: `azure` or `google` |
+| `AZURE_API_KEY` | *(required for azure)* | Azure OpenAI API key |
+| `AZURE_ENDPOINT` | *(required for azure)* | Azure OpenAI endpoint URL |
+| `AZURE_DEPLOYMENT` | *(required for azure)* | Azure deployment name |
+| `AZURE_CONSUMER_ID` | *(required for azure)* | Azure consumer ID |
+| `GOOGLE_API_KEY` | *(required for google)* | Google Gemini API key |
+| `LLM_MODEL` | `gemini-1.5-pro-latest` | Gemini model (when using Google) |
+
+### Execution
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:///research.db` | SQLAlchemy database connection string |
+| `MAX_ITERATIONS` | `30` | Maximum planner iterations before forced stop |
+| `RECURSION_LIMIT` | `50` | LangGraph recursion limit |
+| `REQUIRED_VIEWS` | `front,back,side,top` | Comma-separated image views to collect |
+
+### Networking
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RATE_LIMIT_INTERVAL` | `1.0` | Minimum seconds between HTTP requests |
+| `REQUEST_TIMEOUT` | `10.0` | HTTP request timeout in seconds |
+| `USER_AGENT` | *(Chrome UA)* | User-Agent header for HTTP requests |
+
+### Playwright
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PLAYWRIGHT_NAV_TIMEOUT` | `30000` | Playwright page navigation timeout (ms) |
+| `PLAYWRIGHT_SELECTOR_TIMEOUT` | `10000` | Playwright element wait timeout (ms) |
+
+### Scraping
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DOWNLOAD_DIR` | `downloads` | Directory for downloaded images |
+| `MAX_IMAGE_RESULTS` | `5` | Max images to fetch per search |
+| `PAGE_TEXT_LIMIT` | `5000` | Max characters to extract from web pages |
+| `MAX_DOWNLOAD_SIZE` | `10485760` | Max image file size in bytes (10MB) |
+
+### Video
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VIDEO_DOWNLOAD_DIR` | `downloads/videos` | Directory for downloaded videos |
+| `MAX_VIDEO_RESULTS` | `2` | Number of YouTube videos to process (1-5) |
+| `VIDEO_MIN_DURATION` | `180` | Min video duration in seconds |
+| `VIDEO_MAX_DURATION` | `900` | Max video duration in seconds |
+| `VIDEO_FRAME_INTERVAL` | `2.0` | Supplemental frame sampling interval (seconds) |
+| `VIDEO_MAX_RESOLUTION` | `720` | Max video resolution to download |
+| `AI_FRAME_SELECTION` | `true` | Use LLM for best frame selection |
+
+### Verification
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VERIFY_WEIGHT_IDENTITY` | `0.30` | Weight for product identity confidence |
+| `VERIFY_WEIGHT_EVIDENCE` | `0.25` | Weight for evidence confidence |
+| `VERIFY_WEIGHT_IMAGE` | `0.30` | Weight for image confidence |
+| `VERIFY_WEIGHT_BASE` | `0.15` | Base score added to all results |
+
+### Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+| `LOG_JSON` | `false` | Output logs as JSON (for production) |
 
 ## Usage
 
@@ -82,89 +250,353 @@ python -m src.main "iPhone 15 Pro Max"
 python -m src.main "Samsung Galaxy S24 Ultra"
 ```
 
-## Configuration
-
-All configuration is via environment variables. Copy `.env.example` to `.env` and edit.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GOOGLE_API_KEY` | *(required)* | Google Gemini API key for LLM calls |
-| `DATABASE_URL` | `sqlite:///research.db` | SQLAlchemy database connection string |
-| `LLM_MODEL` | `gemini-1.5-pro-latest` | Gemini model to use for text and vision |
-| `MAX_ITERATIONS` | `30` | Maximum planner iterations before forced stop |
-| `RECURSION_LIMIT` | `50` | LangGraph recursion limit |
-| `REQUIRED_VIEWS` | `front,back,side,top` | Comma-separated image views to collect |
-| `DOWNLOAD_DIR` | `downloads` | Directory for downloaded images |
-| `RATE_LIMIT_INTERVAL` | `1.0` | Minimum seconds between HTTP requests |
-| `REQUEST_TIMEOUT` | `10.0` | HTTP request timeout in seconds |
-| `USER_AGENT` | *(Chrome UA)* | User-Agent header for HTTP requests |
-| `PLAYWRIGHT_NAV_TIMEOUT` | `30000` | Playwright page navigation timeout (ms) |
-| `PLAYWRIGHT_SELECTOR_TIMEOUT` | `10000` | Playwright element wait timeout (ms) |
-| `MAX_IMAGE_RESULTS` | `5` | Max images to fetch per search |
-| `PAGE_TEXT_LIMIT` | `5000` | Max characters to extract from web pages |
-| `MAX_DOWNLOAD_SIZE` | `10485760` | Max image file size in bytes (10MB) |
-| `VIDEO_DOWNLOAD_DIR` | `downloads/videos` | Directory for downloaded videos |
-| `MAX_VIDEO_RESULTS` | `2` | Number of YouTube videos to process (1-5) |
-| `VIDEO_MIN_DURATION` | `180` | Min video duration in seconds (skip shorts) |
-| `VIDEO_MAX_DURATION` | `900` | Max video duration in seconds (skip compilations) |
-| `VIDEO_FRAME_INTERVAL` | `2.0` | Supplemental frame sampling interval (seconds) |
-| `VIDEO_MAX_RESOLUTION` | `720` | Max video resolution to download (480/720/1080) |
-| `AI_FRAME_SELECTION` | `true` | Use Gemini Vision for best frame selection |
-| `VERIFY_WEIGHT_IDENTITY` | `0.30` | Verification weight for product identity confidence |
-| `VERIFY_WEIGHT_EVIDENCE` | `0.25` | Verification weight for evidence confidence |
-| `VERIFY_WEIGHT_IMAGE` | `0.30` | Verification weight for image confidence |
-| `VERIFY_WEIGHT_BASE` | `0.15` | Base verification score added to all results |
-
 ## Tools
 
-The agent uses 14 tools for web interaction and video processing:
+The agent uses 14 tools organized by domain:
 
-| Tool | Description |
-|------|-------------|
-| `search_web` | Text search via DuckDuckGo with HTML fallback |
-| `search_images` | Image search via DuckDuckGo |
-| `search_videos` | Search for YouTube product review videos |
-| `fetch_page` | Fetch static HTML pages with retry and rate limiting |
-| `fetch_page_js` | Fetch JS-rendered pages via Playwright (headless Chromium) |
-| `extract_structured_data` | Parse HTML tables, lists, and metadata from pages |
-| `download_image` | Download images with size validation and retry |
-| `download_video` | Download YouTube videos via yt-dlp at 720p cap |
-| `extract_frames` | Extract key frames using scene detection + supplemental sampling |
-| `select_best_frames` | AI-assisted frame selection using Gemini Vision |
-| `analyze_image` | Classify product image view type using Gemini Vision |
-| `deduplicate_images` | Perceptual hash (pHash) based image deduplication |
-| `check_robots` | Check robots.txt compliance before fetching |
-| `save_evidence` | Persist extracted claims to the database |
+| Tool | Module | Description |
+|------|--------|-------------|
+| `search_web` | `tools/web/search.py` | Text search via DuckDuckGo with HTML fallback |
+| `search_images` | `tools/web/search.py` | Image search via DuckDuckGo |
+| `search_videos` | `tools/web/search.py` | Search for YouTube product review videos |
+| `fetch_page` | `tools/web/fetch.py` | Fetch static HTML pages with retry and rate limiting |
+| `fetch_page_js` | `tools/web/fetch.py` | Fetch JS-rendered pages via Playwright |
+| `extract_structured_data` | `tools/web/fetch.py` | Parse HTML tables, lists, and metadata |
+| `check_robots` | `tools/web/robots.py` | Check robots.txt compliance |
+| `download_image` | `tools/media/images.py` | Download images with size validation |
+| `analyze_image` | `tools/media/images.py` | Classify product image view type using LLM |
+| `deduplicate_images` | `tools/media/images.py` | Perceptual hash (pHash) based deduplication |
+| `download_video` | `tools/media/video.py` | Download YouTube videos via yt-dlp |
+| `extract_frames` | `tools/media/video.py` | Extract key frames using scene detection |
+| `select_best_frames` | `tools/media/video.py` | AI-assisted frame selection using LLM |
+| `save_evidence` | `tools/db/evidence.py` | Persist extracted claims to the database |
 
-## Project Structure
+## Developer Guide
+
+### Quick Start
+
+```python
+# 1. Import the graph builder
+from src.core.graph import build_graph
+
+# 2. Build and compile the graph
+graph = build_graph()
+
+# 3. Define initial state
+initial_state = {
+    "query": "Sony WH-1000XM5",
+    "product": {},
+    "candidates": [],
+    "search_queries": [],
+    "searched_queries": [],
+    "sources": [],
+    "evidence": [],
+    "specifications": {},
+    "images": [],
+    "videos": [],
+    "video_frames": {},
+    "required_views": ["front", "back", "side", "top"],
+    "discovered_views": {},
+    "missing_views": ["front", "back", "side", "top"],
+    "tasks": [],
+    "completed_tasks": [],
+    "failed_tasks": [],
+    "iterations": 0,
+    "max_iterations": 30,
+    "confidence": 0.0,
+    "status": "started",
+}
+
+# 4. Run the graph
+for event in graph.stream(initial_state, {"recursion_limit": 50}):
+    for key, value in event.items():
+        print(f"Finished: {key}")
+```
+
+### Architecture Deep Dive
+
+#### 1. Configuration Layer (`config/`)
+
+The configuration uses Pydantic Settings for type-safe, validated environment variables:
+
+```python
+from src.config import settings
+
+# Access nested configs
+print(settings.llm.provider)      # "azure"
+print(settings.database.url)       # "sqlite:///research.db"
+print(settings.execution.max_iterations)  # 30
+
+# Validate required settings
+missing = settings.validate_required()
+if missing:
+    print(f"Missing: {missing}")
+```
+
+**Key Features:**
+- Nested config groups (LLM, Database, Execution, etc.)
+- Environment variable binding with `env_prefix`
+- Type validation and defaults
+- Sensitive data redaction in logs
+
+#### 2. Structured Logging (`config/logging.py`)
+
+Uses `structlog` for structured, JSON-ready logs:
+
+```python
+from src.config.logging import get_logger
+
+logger = get_logger(__name__)
+logger.info("Processing started", query="Sony WH-1000XM5", user_id="123")
+# Output: {"query": "Sony WH-1000XM5", "user_id": "123", "level": "info", "service": "scrap-snaps"}
+
+# Sensitive data is automatically redacted
+logger.debug("API call", api_key="secret123")
+# Output: {"api_key": "[REDACTED]", "level": "debug"}
+```
+
+#### 3. Plugin Registry (`core/registry.py`)
+
+Register and discover components at runtime:
+
+```python
+from src.core.registry import registry
+
+# Register custom components
+@registry.node("my_custom_node")
+def my_node(state: dict) -> dict:
+    return {"result": "done"}
+
+@registry.tool("my_custom_tool")
+def my_tool(query: str) -> str:
+    return f"Result: {query}"
+
+# List registered components
+print(registry.list_nodes())     # ["planner", "discover", ..., "my_custom_node"]
+print(registry.list_tools())     # ["my_custom_tool"]
+
+# Get summary
+print(registry.summary())
+# {"nodes": [...], "tools": [...], "agents": [...], "graphs": [...]}
+```
+
+#### 4. Agent Classes (`agents/`)
+
+Agents encapsulate business logic, LLM calls, and decision-making:
+
+```python
+from src.agents.base import BaseAgent
+from src.agents.planner import PlannerAgent
+
+# Use existing agents
+planner = PlannerAgent()
+result = planner.run(state)
+
+# Create custom agent
+class MyAgent(BaseAgent):
+    name = "my_agent"
+
+    def run(self, state: dict) -> dict:
+        llm = self.get_llm(temperature=0.5)
+        # ... your logic here
+        return {"result": "done"}
+```
+
+**Agent Hierarchy:**
+```
+BaseAgent
+├── PlannerAgent        # Task generation and iteration control
+├── ResearchAgent       # Discovery and evidence extraction
+├── MediaAgent          # Image and video collection
+├── VerifierAgent       # Evidence quality scoring
+└── CoverageAgent       # Gap analysis and routing
+```
+
+#### 5. Node Wrappers (`nodes/`)
+
+Nodes are thin LangGraph wrappers that call agents:
+
+```python
+from src.agents.planner import PlannerAgent
+from src.state import ResearchState
+
+_agent = PlannerAgent()
+
+def planner(state: ResearchState) -> dict:
+    """Planner Node - delegates to PlannerAgent."""
+    return _agent.run(state)
+```
+
+**Why Thin Nodes?**
+- Separation of concerns (business logic vs. graph wiring)
+- Easy to test agents independently
+- Reusable across different graphs
+
+#### 6. Modular Tools (`tools/`)
+
+Tools are organized by domain for maintainability:
 
 ```
-scrap_snaps/
-├── .env.example          # Environment variable template
-├── .gitignore            # Git ignore rules
-├── pyproject.toml        # Package config and dependencies
-├── requirements.txt      # Pip dependencies
-├── src/
-│   ├── __init__.py
-│   ├── config.py         # Centralized environment configuration
-│   ├── db.py             # SQLAlchemy models and DB init
-│   ├── graph.py          # LangGraph state machine definition
-│   ├── llm.py            # Gemini LLM client configuration
-│   ├── main.py           # CLI entry point
-│   ├── state.py          # ResearchState TypedDict definition
-│   ├── tools.py          # Web scraping, search, and analysis tools
-│   └── nodes/
-│       ├── __init__.py
-│       ├── coverage.py   # Gap analysis - what's missing?
-│       ├── discovery.py  # Product identification via search
-│       ├── evidence.py   # Specification extraction
-│       ├── media.py      # Image collection and classification
-│       ├── planner.py    # LLM-powered task planning
-│       ├── verification.py # Evidence quality scoring
-│       └── video_extract.py # YouTube video frame extraction
-└── tests/
-    ├── __init__.py
-    └── test_state.py     # State schema validation tests
+tools/
+├── web/           # Web scraping and search
+│   ├── search.py  # DuckDuckGo search
+│   ├── fetch.py   # Page fetching (static + JS)
+│   └── robots.py  # robots.txt checking
+├── media/         # Image and video processing
+│   ├── images.py  # Image download and analysis
+│   └── video.py   # Video download and frame extraction
+├── db/            # Database operations
+│   └── evidence.py
+└── utils/         # Shared utilities
+    ├── http.py    # HTTP client with retry
+    └── hashing.py # Image hashing
+```
+
+**Adding a New Tool:**
+
+```python
+# src/tools/web/my_tool.py
+from langchain_core.tools import tool
+from src.config.logging import get_logger
+
+logger = get_logger(__name__)
+
+@tool
+def my_custom_tool(query: str, limit: int = 10) -> list[dict]:
+    """Search for custom data matching a query.
+
+    Args:
+        query: The search query
+        limit: Maximum results to return
+
+    Returns:
+        List of result dicts with 'url', 'title', 'snippet' keys
+    """
+    logger.info("Executing custom search for: %s", query)
+    # Your implementation here
+    return [{"url": "...", "title": "...", "snippet": "..."}]
+```
+
+**Register the Tool:**
+
+```python
+# src/tools/__init__.py
+from src.tools.web.my_tool import my_custom_tool
+
+__all__ = [..., "my_custom_tool"]
+```
+
+#### 7. Graph Builder (`core/graph.py`)
+
+Build graphs with or without the registry:
+
+```python
+from src.core.graph import build_graph
+
+# Standard build (uses registry)
+graph = build_graph()
+
+# Build without registry (direct imports)
+graph = build_graph(use_registry=False)
+
+# Get builder without compiling
+builder = build_graph(compile=False)
+builder.add_node("custom", my_custom_func)
+builder.add_edge("planner", "custom")
+compiled = builder.compile()
+```
+
+### End-to-End Flow
+
+1. **Initialization**
+   - Load settings from environment
+   - Configure structured logging
+   - Register default components in registry
+   - Build and compile the LangGraph
+
+2. **Planner Node**
+   - Evaluates current state (iterations, tasks, coverage)
+   - Calls LLM to generate research tasks
+   - Routes to appropriate execution node based on task type
+
+3. **Execution Nodes**
+   - **Discovery**: Web search → LLM extraction → product identification
+   - **Evidence**: Search → fetch page → LLM spec extraction
+   - **Media**: Image search → download → dedup → LLM classification
+   - **Video**: YouTube search → download → frame extraction → classification
+
+4. **Verification Node**
+   - Computes weighted confidence score
+   - Factors: identity, evidence, image quality
+
+5. **Coverage Node**
+   - Checks which views are still missing
+   - Routes back to planner (if incomplete) or finalize (if complete)
+
+6. **Finalize Node**
+   - Packages results
+   - Returns final state
+
+### Database Models
+
+```python
+# src/db.py
+class Product(Base):
+    """Canonical product identity."""
+    id: int
+    canonical_name: str
+    created_at: datetime
+
+class Source(Base):
+    """Web source with reliability score."""
+    id: int
+    url: str
+    source_type: str
+    reliability_score: float
+
+class Claim(Base):
+    """Extracted specification claim."""
+    id: int
+    product_id: int
+    source_id: int
+    claim_type: str
+    value: str
+    confidence: float
+
+class Image(Base):
+    """Downloaded and classified image."""
+    id: int
+    product_id: int
+    url: str
+    phash: str
+    view_type: str
+    local_path: str
+```
+
+### Testing
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run with coverage
+python -m pytest tests/ --cov=src
+
+# Run specific test
+python -m pytest tests/test_state.py -v
+```
+
+### Linting
+
+```bash
+# Check for issues
+python -m ruff check src/
+
+# Auto-fix issues
+python -m ruff check src/ --fix
+
+# Format code
+python -m ruff format src/
 ```
 
 ## Database
