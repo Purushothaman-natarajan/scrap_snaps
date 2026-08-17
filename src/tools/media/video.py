@@ -29,7 +29,7 @@ def score_video(video: dict) -> float:
     if any(kw in title for kw in review_keywords):
         score += 0.3
 
-    duration = video.get("duration", 0)
+    duration = _parse_duration(video.get("duration", 0))
     if 180 <= duration <= 900:
         score += 0.2
     elif 60 <= duration < 180:
@@ -41,6 +41,27 @@ def score_video(video: dict) -> float:
         score -= 0.3
 
     return score
+
+
+def _parse_duration(duration) -> int:
+    """Parse duration from string (e.g., '5:30', '1:23:45') or int to seconds."""
+    if isinstance(duration, (int, float)):
+        return int(duration)
+    if not isinstance(duration, str):
+        return 0
+
+    parts = duration.strip().split(":")
+    try:
+        if len(parts) == 3:
+            h, m, s = parts
+            return int(h) * 3600 + int(m) * 60 + int(s)
+        elif len(parts) == 2:
+            m, s = parts
+            return int(m) * 60 + int(s)
+        else:
+            return int(parts[0])
+    except (ValueError, TypeError):
+        return 0
 
 
 @tool
