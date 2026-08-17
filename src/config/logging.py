@@ -43,13 +43,11 @@ def configure_logging(
         json_format: Whether to output JSON. Defaults to settings.
         include_timestamp: Whether to include timestamps. Defaults to settings.
     """
-    log_settings = settings.logging
-
-    log_level = level or log_settings.level
-    json_logs = json_format if json_format is not None else log_settings.json_format
+    log_level = level or settings.log_level
+    json_logs = json_format if json_format is not None else settings.log_json
     timestamps = (
         include_timestamp if include_timestamp is not None
-        else log_settings.include_timestamp
+        else settings.log_timestamp
     )
 
     # Standard library logging config

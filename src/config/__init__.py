@@ -7,39 +7,39 @@ from src.config.logging import configure_logging, get_logger
 from src.config.settings import settings
 
 # Backward-compatible exports for existing imports from src.config
-AZURE_API_KEY = settings.llm.azure_api_key
-AZURE_ENDPOINT = settings.llm.azure_endpoint
-AZURE_DEPLOYMENT = settings.llm.azure_deployment
-AZURE_CONSUMER_ID = settings.llm.azure_consumer_id
+AZURE_API_KEY = settings.azure_api_key
+AZURE_ENDPOINT = settings.azure_endpoint
+AZURE_DEPLOYMENT = settings.azure_deployment
+AZURE_CONSUMER_ID = settings.azure_consumer_id
 
-DATABASE_URL = settings.database.url
+DATABASE_URL = settings.database_url
 
-MAX_ITERATIONS = settings.execution.max_iterations
-RECURSION_LIMIT = settings.execution.recursion_limit
-REQUIRED_VIEWS = settings.execution.required_views_list
+MAX_ITERATIONS = settings.max_iterations
+RECURSION_LIMIT = settings.recursion_limit
+REQUIRED_VIEWS = settings.required_views_list
 
-SERPAPI_KEY = settings.network.serpapi_key
-RATE_LIMIT_INTERVAL = settings.network.rate_limit_interval
-REQUEST_TIMEOUT = settings.network.request_timeout
-USER_AGENT = settings.network.user_agent
+SERPAPI_KEY = settings.serpapi_key
+RATE_LIMIT_INTERVAL = settings.rate_limit_interval
+REQUEST_TIMEOUT = settings.request_timeout
+USER_AGENT = settings.user_agent
 
-PLAYWRIGHT_NAV_TIMEOUT = settings.playwright.nav_timeout
-PLAYWRIGHT_SELECTOR_TIMEOUT = settings.playwright.selector_timeout
+PLAYWRIGHT_NAV_TIMEOUT = settings.playwright_nav_timeout
+PLAYWRIGHT_SELECTOR_TIMEOUT = settings.playwright_selector_timeout
 
-DOWNLOAD_DIR = settings.scraping.download_dir
-MAX_IMAGE_RESULTS = settings.scraping.max_image_results
-PAGE_TEXT_LIMIT = settings.scraping.page_text_limit
-MAX_DOWNLOAD_SIZE = settings.scraping.max_download_size
+DOWNLOAD_DIR = settings.download_dir
+MAX_IMAGE_RESULTS = settings.max_image_results
+PAGE_TEXT_LIMIT = settings.page_text_limit
+MAX_DOWNLOAD_SIZE = settings.max_download_size
 
-VIDEO_DOWNLOAD_DIR = settings.video.download_dir
-MAX_VIDEO_RESULTS = settings.video.max_results
-VIDEO_MIN_DURATION = settings.video.min_duration
-VIDEO_MAX_DURATION = settings.video.max_duration
-VIDEO_FRAME_INTERVAL = settings.video.frame_interval
-VIDEO_MAX_RESOLUTION = settings.video.max_resolution
-AI_FRAME_SELECTION = settings.video.ai_frame_selection
+VIDEO_DOWNLOAD_DIR = settings.video_download_dir
+MAX_VIDEO_RESULTS = settings.max_video_results
+VIDEO_MIN_DURATION = settings.video_min_duration
+VIDEO_MAX_DURATION = settings.video_max_duration
+VIDEO_FRAME_INTERVAL = settings.video_frame_interval
+VIDEO_MAX_RESOLUTION = settings.video_max_resolution
+AI_FRAME_SELECTION = settings.ai_frame_selection
 
-VERIFICATION_WEIGHTS = settings.verification.weights
+VERIFICATION_WEIGHTS = settings.weights
 
 validate_env = settings.validate_required
 

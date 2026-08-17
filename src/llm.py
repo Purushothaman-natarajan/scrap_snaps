@@ -15,34 +15,32 @@ logger = get_logger(__name__)
 @lru_cache(maxsize=4)
 def _get_azure_llm(temperature: float) -> ChatOpenAI:
     """Create and cache Azure OpenAI LLM instance."""
-    llm_config = settings.llm
-
-    if not llm_config.azure_api_key or llm_config.azure_api_key == "your_azure_api_key_here":
+    if not settings.azure_api_key or settings.azure_api_key == "your_azure_api_key_here":
         logger.warning("AZURE_API_KEY is missing or invalid. LLM calls will fail.")
 
-    if not llm_config.azure_endpoint:
+    if not settings.azure_endpoint:
         logger.warning("AZURE_ENDPOINT is missing. LLM calls will fail.")
 
-    if not llm_config.azure_deployment:
+    if not settings.azure_deployment:
         logger.warning("AZURE_DEPLOYMENT is missing. LLM calls will fail.")
 
-    if not llm_config.azure_consumer_id:
+    if not settings.azure_consumer_id:
         logger.warning("AZURE_CONSUMER_ID is missing. LLM calls may fail.")
 
     client = openai.OpenAI(
-        api_key=llm_config.azure_api_key,
-        base_url=f"{llm_config.azure_endpoint.rstrip('/')}/openai/v1/",
+        api_key=settings.azure_api_key,
+        base_url=f"{settings.azure_endpoint.rstrip('/')}/openai/v1/",
         default_headers={
-            "X-Consumer-ID": llm_config.azure_consumer_id,
+            "X-Consumer-ID": settings.azure_consumer_id,
         },
     )
 
     return ChatOpenAI(
-        model=llm_config.azure_deployment,
+        model=settings.azure_deployment,
         temperature=temperature,
         openai_client=client,
-        max_retries=llm_config.max_retries,
-        timeout=llm_config.timeout,
+        max_retries=settings.llm_max_retries,
+        timeout=settings.llm_timeout,
     )
 
 
