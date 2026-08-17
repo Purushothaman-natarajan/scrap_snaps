@@ -3,12 +3,14 @@
 from langchain_core.tools import tool
 
 from src.config.logging import get_logger
+from src.tools.logging import log_tool_call
 from src.tools.utils.http import can_fetch
 
 logger = get_logger(__name__)
 
 
 @tool
+@log_tool_call
 def check_robots(url: str) -> dict:
     """Check if a URL is allowed by robots.txt."""
     try:

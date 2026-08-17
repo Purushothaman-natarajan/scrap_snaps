@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from src.config import DOWNLOAD_DIR, MAX_DOWNLOAD_SIZE
 from src.config.logging import get_logger
 from src.llm import get_vision_llm
+from src.tools.logging import log_tool_call
 from src.tools.utils.hashing import perceptual_hash
 from src.tools.utils.http import http_get
 
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 
 
 @tool
+@log_tool_call
 def download_image(url: str, save_dir: str = DOWNLOAD_DIR) -> str:
     """Download an image from a URL and return its local path."""
     os.makedirs(save_dir, exist_ok=True)
@@ -57,6 +59,7 @@ def download_image(url: str, save_dir: str = DOWNLOAD_DIR) -> str:
 
 
 @tool
+@log_tool_call
 def analyze_image(image_path: str) -> dict:
     """Analyze an image using a vision model to determine the view type."""
     if not os.path.exists(image_path):
@@ -109,6 +112,7 @@ def analyze_image(image_path: str) -> dict:
 
 
 @tool
+@log_tool_call
 def deduplicate_images(image_paths: list[str]) -> list[str]:
     """Take a list of image paths and return paths of unique images based on pHash."""
     unique_paths = []

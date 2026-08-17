@@ -5,6 +5,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from src.agents.base import BaseAgent
+from src.search.focus import FocusConfig
+from src.search.query_builder import build_queries
 from src.tools.web import fetch_page, search_web
 
 
@@ -41,17 +43,32 @@ class ResearchAgent(BaseAgent):
 
     name = "researcher"
 
+    def _get_focus(self, state: dict) -> FocusConfig:
+        """Extract FocusConfig from state."""
+        return FocusConfig.from_dict(state.get("focus_config", {}))
+
     def discover(self, state: dict) -> dict:
         """Discovery: web search -> extract product candidates."""
         self.logger.info("Research agent: discovery executing")
         query = state.get("query", "")
+        focus = self._get_focus(state)
 
-        search_queries = state.get("search_queries", [])
-        if not search_queries:
-            search_queries.append(f"{query} specifications official")
+        # Build focus-aware queries
+        queries = build_queries(query, focus=focus, task_type="discover", limit=3)
+        if not queries:
+            queries_list = [query]
+        else:
+            queries_list = [q.query for q in queries]
 
-        current_query = search_queries[0]
+        # Search with first query
+        current_query = queries_list[0]
         results = search_web.invoke({"query": current_query})
+
+        # If no focus filtering, try additional queries
+        if len(queries_list) > 1 and len(results) < 3:
+            for q in queries_list[1:]:
+                more = search_web.invoke({"query": q})
+                results.extend(more)
 
         llm = self.get_llm().with_structured_output(DiscoveryOutput)
         prompt = (
@@ -71,7 +88,7 @@ class ResearchAgent(BaseAgent):
         tasks = self.remove_tasks_by_type(state.get("tasks", []), "discover")
 
         return {
-            "searched_queries": [current_query],
+            "searched_queries": queries_list,
             "candidates": candidates,
             "product": product,
             "sources": results,
@@ -83,8 +100,12 @@ class ResearchAgent(BaseAgent):
         self.logger.info("Research agent: evidence extraction executing")
         product = state.get("product", {})
         query = product.get("name", state.get("query", ""))
+        focus = self._get_focus(state)
 
-        search_q = f"{query} technical specifications"
+        # Build focus-aware queries for specs
+        queries = build_queries(query, focus=focus, task_type="verify_spec", limit=2)
+        search_q = queries[0].query if queries else f"{query} technical specifications"
+
         results = search_web.invoke({"query": search_q})
 
         evidence_list = state.get("evidence", [])

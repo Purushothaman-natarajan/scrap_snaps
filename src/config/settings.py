@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     recursion_limit: int = Field(default=50)
     required_views: str = Field(default="front,back,side,top")
 
+    # === Focus ===
+    focus_areas: str = Field(default="product_pages,seller_images,youtube,specs")
+
     # === Networking ===
     rate_limit_interval: float = Field(default=1.0)
     request_timeout: float = Field(default=10.0)

@@ -4,11 +4,13 @@ from langchain_core.tools import tool
 
 from src.config import DATABASE_URL
 from src.config.logging import get_logger
+from src.tools.logging import log_tool_call
 
 logger = get_logger(__name__)
 
 
 @tool
+@log_tool_call
 def save_evidence(claim: dict) -> str:
     """Save an evidence claim to the database."""
     from src.db import Claim as ClaimModel

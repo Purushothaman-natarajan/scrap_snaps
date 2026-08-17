@@ -5,6 +5,7 @@ from serpapi import GoogleSearch
 
 from src.config import MAX_IMAGE_RESULTS, SERPAPI_KEY
 from src.config.logging import get_logger
+from src.tools.logging import log_tool_call
 
 logger = get_logger(__name__)
 
@@ -17,9 +18,9 @@ def _search_serpapi(params: dict) -> list[dict]:
 
 
 @tool
+@log_tool_call
 def search_web(query: str, limit: int = 10) -> list[dict]:
     """Search the web for a given query using Google via SerpAPI."""
-    logger.info("Executing web search for: %s", query)
     try:
         params = {
             "q": query,
@@ -37,9 +38,9 @@ def search_web(query: str, limit: int = 10) -> list[dict]:
 
 
 @tool
+@log_tool_call
 def search_images(query: str, limit: int = MAX_IMAGE_RESULTS) -> list[dict]:
     """Search for images matching a query using Google Images via SerpAPI."""
-    logger.info("Executing image search for: %s", query)
     try:
         params = {
             "q": query,
@@ -58,16 +59,16 @@ def search_images(query: str, limit: int = MAX_IMAGE_RESULTS) -> list[dict]:
 
 
 @tool
+@log_tool_call
 def search_videos(query: str, limit: int = 10) -> list[dict]:
     """Search for YouTube videos matching a query using SerpAPI.
 
     Returns video metadata: url, title, duration, channel, view_count.
-    Filters for review/unboxing/hands-on content.
+    The query should already include relevant modifiers (e.g., "review", "unboxing").
     """
-    logger.info("Searching for videos: %s", query)
     try:
         params = {
-            "q": f"{query} review",
+            "q": query,
             "engine": "youtube",
         }
         results = _search_serpapi(params)

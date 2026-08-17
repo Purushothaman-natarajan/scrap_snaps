@@ -10,12 +10,14 @@ from src.config import (
     USER_AGENT,
 )
 from src.config.logging import get_logger
+from src.tools.logging import log_tool_call
 from src.tools.utils.http import can_fetch, http_get
 
 logger = get_logger(__name__)
 
 
 @tool
+@log_tool_call
 def fetch_page(url: str) -> str:
     """Fetch the text content of a static web page."""
     logger.info("Fetching page: %s", url)
@@ -37,6 +39,7 @@ def fetch_page(url: str) -> str:
 
 
 @tool
+@log_tool_call
 def fetch_page_js(url: str, wait_selector: str = "body") -> str:
     """Fetch page content using Playwright for JS-rendered pages.
 
@@ -82,6 +85,7 @@ def fetch_page_js(url: str, wait_selector: str = "body") -> str:
 
 
 @tool
+@log_tool_call
 def extract_structured_data(url: str) -> dict:
     """Extract structured data (tables, lists, specs) from a web page.
 

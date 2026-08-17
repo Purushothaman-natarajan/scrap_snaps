@@ -1,27 +1,42 @@
 """Main entry point for the product research agent."""
 
+import argparse
 import logging
 
-from src.config import DATABASE_URL, MAX_ITERATIONS, RECURSION_LIMIT, REQUIRED_VIEWS, validate_env
+from src.config import (
+    DATABASE_URL,
+    FOCUS_AREAS,
+    MAX_ITERATIONS,
+    RECURSION_LIMIT,
+    REQUIRED_VIEWS,
+    validate_env,
+)
 from src.db import init_db
 from src.graph import build_graph
+from src.search.focus import get_focus_config
 
 logger = logging.getLogger(__name__)
 
 
-def run_research(query: str):
+def run_research(query: str, focus_areas: str | None = None):
     """Execute a research run for the given product query."""
     logger.info("Starting research for: %s", query)
+
+    # Use CLI focus if provided, otherwise fall back to config
+    focus_raw = focus_areas or FOCUS_AREAS
+    focus = get_focus_config(focus_raw)
+    if focus.areas:
+        logger.info("Focus areas: %s", [a.value for a in focus.areas])
 
     session = init_db(DATABASE_URL)
     logger.info("Database initialized at %s", DATABASE_URL)
 
     graph = build_graph()
 
-    # Initial state: all fields start empty/zero. The planner will populate
-    # tasks, which then flow through discovery -> evidence/media -> verification.
     initial_state = {
         "query": query,
+        "focus_areas": [a.value for a in focus.areas],
+        "focus_config": focus.to_dict(),
         "product": {},
         "candidates": [],
         "search_queries": [],
@@ -54,17 +69,29 @@ def run_research(query: str):
 
 def main():
     """CLI entry point."""
-    import sys
+    parser = argparse.ArgumentParser(
+        description="Autonomous Product Research Agent",
+        usage="%(prog)s <query> [--focus areas]",
+    )
+    parser.add_argument(
+        "query",
+        help='Product to research (e.g. "Sony WH-1000XM5")',
+    )
+    parser.add_argument(
+        "--focus",
+        help="Comma-separated focus areas (product_pages, seller_images, youtube, price_comparison, specs)",
+        default=None,
+    )
+
+    args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    query = "Sony WH-1000XM5" if len(sys.argv) < 2 else sys.argv[1]
-
     validate_env()
-    run_research(query)
+    run_research(args.query, focus_areas=args.focus)
 
 
 if __name__ == "__main__":

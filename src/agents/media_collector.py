@@ -13,6 +13,8 @@ from src.config import (
     VIDEO_DOWNLOAD_DIR,
 )
 from src.config.logging import get_logger
+from src.search.focus import FocusConfig
+from src.search.query_builder import build_queries
 from src.tools.media.images import analyze_image, deduplicate_images, download_image
 from src.tools.media.video import (
     download_video,
@@ -32,11 +34,16 @@ class MediaAgent(BaseAgent):
 
     name = "media_collector"
 
+    def _get_focus(self, state: dict) -> FocusConfig:
+        """Extract FocusConfig from state."""
+        return FocusConfig.from_dict(state.get("focus_config", {}))
+
     def collect_images(self, state: dict) -> dict:
         """Image search -> download -> deduplicate -> classify views."""
         self.logger.info("Media agent: collecting images")
         product = state.get("product", {})
         query = product.get("name", state.get("query", ""))
+        focus = self._get_focus(state)
 
         tasks = state.get("tasks", [])
         target_view = DEFAULT_TARGET_VIEW
@@ -45,7 +52,13 @@ class MediaAgent(BaseAgent):
                 target_view = t.get("target")
                 break
 
-        search_q = f"{query} {target_view} view high quality"
+        # Build focus-aware queries for image search
+        queries = build_queries(query, focus=focus, task_type="find_images", limit=2)
+        if queries:
+            search_q = queries[0].query
+        else:
+            search_q = f"{query} {target_view} view high quality"
+
         results = search_images.invoke({"query": search_q, "limit": MAX_IMAGE_RESULTS})
 
         images_list = state.get("images", [])
@@ -97,8 +110,15 @@ class MediaAgent(BaseAgent):
         product = state.get("product", {})
         query = product.get("name", state.get("query", ""))
         missing_views = state.get("missing_views", REQUIRED_VIEWS.copy())
+        focus = self._get_focus(state)
 
-        search_q = f"{query} review angles"
+        # Build focus-aware queries for video search
+        queries = build_queries(query, focus=focus, task_type="find_videos", limit=2)
+        if queries:
+            search_q = queries[0].query
+        else:
+            search_q = f"{query} review angles"
+
         videos = search_videos.invoke({"query": search_q, "limit": 10})
 
         if not videos:

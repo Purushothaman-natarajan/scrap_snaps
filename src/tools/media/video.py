@@ -15,6 +15,7 @@ from src.config import (
 )
 from src.config.logging import get_logger
 from src.llm import get_vision_llm
+from src.tools.logging import log_tool_call
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,7 @@ def score_video(video: dict) -> float:
 
 
 @tool
+@log_tool_call
 def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR) -> str:
     """Download a YouTube video using yt-dlp.
 
@@ -95,6 +97,7 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR) -> str:
 
 
 @tool
+@log_tool_call
 def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> list[str]:
     """Extract key frames from a video using scene detection + supplemental sampling.
 
@@ -175,6 +178,7 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
 
 
 @tool
+@log_tool_call
 def select_best_frames(
     frame_paths: list[str], views: list[str], max_per_view: int = 2
 ) -> dict[str, list[dict]]:

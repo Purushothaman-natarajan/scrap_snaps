@@ -11,6 +11,10 @@ class ResearchState(TypedDict):
     # User request
     query: str
 
+    # Focus configuration
+    focus_areas: list[str]
+    focus_config: dict
+
     # Canonical identity
     product: dict
     candidates: list[dict]

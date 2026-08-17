@@ -14,6 +14,7 @@ from tenacity import (
 
 from src.config import RATE_LIMIT_INTERVAL, REQUEST_TIMEOUT, USER_AGENT
 from src.config.logging import get_logger
+from src.tools.logging import log_tool_call
 
 logger = get_logger(__name__)
 
@@ -58,6 +59,7 @@ def can_fetch(url: str, user_agent: str = "*") -> bool:
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout)),
 )
+@log_tool_call
 def http_get(url: str, timeout: float = REQUEST_TIMEOUT) -> httpx.Response:
     """HTTP GET with retry, rate limiting, and User-Agent."""
     rate_limit()
