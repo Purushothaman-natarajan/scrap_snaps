@@ -5,53 +5,62 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 ## Architecture Overview
 
 ```mermaid
-graph LR
-    subgraph Config["Config Layer"]
-        direction TB
-        SETTINGS["Pydantic Settings"]
-        LOGGING["structlog"]
+graph TD
+    subgraph CONFIG["⚙️ Config Layer"]
+        SETTINGS["Pydantic Settings<br/>.env file"]
+        LOGMOD["structlog<br/>file + console logging"]
     end
 
-    subgraph Core["Core Layer"]
-        direction TB
+    subgraph CORE["🔧 Core Layer"]
         REGISTRY["Plugin Registry"]
-        GRAPH["Graph Builder"]
+        GRAPH_B["Graph Builder"]
+        SEARCH["search/<br/>focus · query_builder · filters"]
     end
 
-    subgraph Agents["Agent Layer"]
-        direction TB
-        PLANNER["Planner"]
-        RESEARCHER["Researcher"]
-        MEDIA_COLLECTOR["Media"]
-        VERIFIER["Verifier"]
-        COVERAGE["Coverage"]
+    subgraph AGENTS["🧠 Agent Layer"]
+        PLANNER_A["PlannerAgent<br/>task generation"]
+        RESEARCHER_A["ResearchAgent<br/>discovery + evidence"]
+        MEDIA_A["MediaAgent<br/>images + videos"]
+        VERIFIER_A["VerifierAgent<br/>confidence scoring"]
+        COVERAGE_A["CoverageAgent<br/>gap analysis"]
     end
 
-    subgraph Nodes["LangGraph Layer"]
-        direction TB
-        N_PLAN["planner"]
-        N_DISC["discovery"]
-        N_EVID["evidence"]
-        N_MEDIA["media"]
-        N_VERIFY["verification"]
-        N_COV["coverage"]
+    subgraph GRAPH["🔗 LangGraph Layer"]
+        N_PLANNER["planner node"]
+        N_DISCOVERY["discovery node"]
+        N_EVIDENCE["evidence node"]
+        N_MEDIA["media node"]
+        N_VIDEO["video_extract node"]
+        N_VERIFY["verification node"]
+        N_COVERAGE["coverage node"]
     end
 
-    subgraph Tools["Tool Layer"]
-        direction TB
-        WEB["web/"]
-        MEDIA_TOOLS["media/"]
-        DB["db/"]
-        UTILS["utils/"]
+    subgraph TOOLS["🛠️ Tool Layer"]
+        WEB["web/<br/>search.py · fetch.py · robots.py"]
+        MEDIA_TOOLS["media/<br/>images.py · video.py"]
+        DB["db/<br/>evidence.py"]
+        UTILS["utils/<br/>http.py · hashing.py"]
     end
 
-    Config --> Core --> Agents --> Nodes --> Tools
+    subgraph EXTERNAL["🌐 External Services"]
+        AZURE["Azure OpenAI<br/>LLM + Vision"]
+        SERPAPI["SerpAPI<br/>Google Search"]
+        YT["YouTube<br/>via yt-dlp"]
+        DATABASE["PostgreSQL<br/>evidence store"]
+    end
 
-    style Config fill:#FFF7E6,stroke:#B45309
-    style Core fill:#FFF7E6,stroke:#B45309
-    style Agents fill:#E8F5E9,stroke:#2E7D32
-    style Nodes fill:#E3F2FD,stroke:#1565C0
-    style Tools fill:#F3E5F5,stroke:#7B1FA2
+    CONFIG --> CORE
+    CORE --> AGENTS
+    AGENTS --> GRAPH
+    GRAPH --> TOOLS
+    TOOLS --> EXTERNAL
+
+    style CONFIG fill:#FFF7E6,stroke:#B45309,stroke-width:2px
+    style CORE fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    style AGENTS fill:#E3F2FD,stroke:#1565C0,stroke-width:2px
+    style GRAPH fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px
+    style TOOLS fill:#FFF3E0,stroke:#E65100,stroke-width:2px
+    style EXTERNAL fill:#FFEBEE,stroke:#B71C1C,stroke-width:2px
 ```
 
 **Layer Responsibilities:**
@@ -69,10 +78,10 @@ graph LR
 flowchart TD
     Start(["▶️ START"]) --> PLANNER["🧠 Planner"]
     
-    PLANNER -- "discover" --> DISCOVER["🔍 Discovery"]
-    PLANNER -- "verify_spec" --> EVIDENCE["📋 Evidence"]
-    PLANNER -- "find_images" --> MEDIA_COLLECTOR["🖼️ Media"]
-    PLANNER -- "find_videos" --> VIDEO_EXTRACTOR["🎬 Video"]
+    PLANNER -- "discover" --> DISCOVER["🔍 Discovery<br/>search_web → extract candidates"]
+    PLANNER -- "verify_spec" --> EVIDENCE["📋 Evidence<br/>search_web → fetch_page → extract specs"]
+    PLANNER -- "find_images" --> MEDIA_COLLECTOR["🖼️ Media<br/>search_images → download → classify"]
+    PLANNER -- "find_videos" --> VIDEO_EXTRACTOR["🎬 Video<br/>search_videos → download → extract frames"]
     PLANNER -- "no tasks" --> FINALIZE["✅ Finalize"]
     
     DISCOVER --> VERIFY
@@ -80,7 +89,7 @@ flowchart TD
     MEDIA_COLLECTOR --> VERIFY
     VIDEO_EXTRACTOR --> VERIFY
     
-    VERIFY["🔎 Verify"] --> COVERAGE["📊 Coverage"]
+    VERIFY["🔎 Verify<br/>score confidence"] --> COVERAGE["📊 Coverage<br/>gap analysis"]
     
     COVERAGE -- "incomplete" --> PLANNER
     COVERAGE -- "complete" --> FINALIZE
