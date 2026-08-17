@@ -18,6 +18,7 @@ MAX_ITERATIONS = settings.max_iterations
 RECURSION_LIMIT = settings.recursion_limit
 REQUIRED_VIEWS = settings.required_views_list
 FOCUS_AREAS = settings.focus_areas
+COLLECT = settings.collect
 
 SERPAPI_KEY = settings.serpapi_key
 RATE_LIMIT_INTERVAL = settings.rate_limit_interval
@@ -57,6 +58,7 @@ __all__ = [
     "RECURSION_LIMIT",
     "REQUIRED_VIEWS",
     "FOCUS_AREAS",
+    "COLLECT",
     "SERPAPI_KEY",
     "RATE_LIMIT_INTERVAL",
     "REQUEST_TIMEOUT",

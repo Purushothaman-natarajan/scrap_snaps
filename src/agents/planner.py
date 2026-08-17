@@ -52,12 +52,20 @@ class PlannerAgent(BaseAgent):
 
         llm = self.get_llm().with_structured_output(PlannerOutput)
         focus = self._get_focus(state)
+        collect = state.get("collect", "both")
 
         # Build focus-aware context for the planner
         focus_context = ""
         if focus.areas:
             area_names = [a.value for a in focus.areas]
             focus_context = f"\n- Focus Areas: {', '.join(area_names)}"
+
+        # Build collect context
+        collect_context = f"\n- Collect Mode: {collect}"
+        if collect == "specs":
+            collect_context += "\n  (Only collect specifications/text, skip image/video tasks)"
+        elif collect == "images":
+            collect_context += "\n  (Only collect images/videos, skip spec extraction tasks)"
 
         prompt = f"""
         You are the Planner for an autonomous Product Research Agent.
@@ -70,7 +78,7 @@ class PlannerAgent(BaseAgent):
         - Missing Views: {state.get("missing_views", [])}
         - Images Collected: {len(state.get("images", []))}
         - Videos Processed: {len(state.get("videos", []))}
-        - Failed Tasks: {len(state.get("failed_tasks", []))}{focus_context}
+        - Failed Tasks: {len(state.get("failed_tasks", []))}{focus_context}{collect_context}
 
         Decide what tasks to execute next.
         If the product is not identified, output a 'discover' task.
@@ -91,20 +99,45 @@ class PlannerAgent(BaseAgent):
 
     def _fallback_tasks(self, state: dict, iterations: int, focus: FocusConfig | None = None) -> dict:
         """Generate fallback tasks when LLM fails."""
+        collect = state.get("collect", "both")
+
         if not state.get("product"):
             return {
                 "tasks": [{"type": "discover", "target": state.get("query", ""), "priority": 1.0}],
                 "iterations": iterations,
             }
 
-        # Prioritize tasks based on focus areas
+        # Specs only mode - skip image/video tasks
+        if collect == "specs":
+            if len(state.get("specifications", {})) < 5:
+                return {
+                    "tasks": [{"type": "verify_spec", "target": "general", "priority": 0.9}],
+                    "iterations": iterations,
+                }
+            return {"tasks": [], "iterations": iterations}
+
+        # Images only mode - skip spec tasks
+        if collect == "images":
+            if state.get("missing_views"):
+                return {
+                    "tasks": [
+                        {
+                            "type": "find_images",
+                            "target": state.get("missing_views")[0],
+                            "priority": 0.9,
+                        }
+                    ],
+                    "iterations": iterations,
+                }
+            return {"tasks": [], "iterations": iterations}
+
+        # Both mode - original logic
         has_youtube_focus = focus and FocusArea.YOUTUBE in focus.areas
         has_specs_focus = focus and FocusArea.SPECS in focus.areas
 
         if state.get("missing_views"):
             images_count = len(state.get("images", []))
 
-            # If YouTube is focused and we have few videos, try video extraction
             if has_youtube_focus and images_count < 5:
                 return {
                     "tasks": [
@@ -140,7 +173,6 @@ class PlannerAgent(BaseAgent):
                     "iterations": iterations,
                 }
 
-        # If specs are focused and we have few specifications
         if has_specs_focus and len(state.get("specifications", {})) < 3:
             return {
                 "tasks": [{"type": "verify_spec", "target": "general", "priority": 0.9}],

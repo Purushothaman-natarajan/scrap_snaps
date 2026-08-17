@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     # === Focus ===
     focus_areas: str = Field(default="product_pages,seller_images,youtube,specs")
+    collect: str = Field(default="both")  # specs, images, or both
 
     # === Networking ===
     rate_limit_interval: float = Field(default=1.0)

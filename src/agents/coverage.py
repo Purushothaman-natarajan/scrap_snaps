@@ -19,35 +19,49 @@ class CoverageAgent(BaseAgent):
         return FocusConfig.from_dict(state.get("focus_config", {}))
 
     def analyze(self, state: dict) -> dict:
-        """Evaluate what is missing from both image search and video extraction."""
+        """Evaluate what is missing based on collect mode."""
         self.logger.info("Coverage agent executing")
+
+        collect = state.get("collect", "both")
+        focus = self._get_focus(state)
 
         required_views = state.get("required_views", [])
         discovered_views = state.get("discovered_views", {})
-        focus = self._get_focus(state)
-
         missing_views = [v for v in required_views if v not in discovered_views]
 
-        # Focus-aware completeness check
+        # Specs only mode
+        if collect == "specs":
+            specs = state.get("specifications", {})
+            status = "complete" if len(specs) >= 3 else "incomplete"
+            self.logger.info("Coverage (specs): %d specs collected", len(specs))
+            return {"missing_views": [], "status": status}
+
+        # Images only mode
+        if collect == "images":
+            status = "complete" if not missing_views else "incomplete"
+            self.logger.info(
+                "Coverage (images): %d/%d views found",
+                len(required_views) - len(missing_views),
+                len(required_views),
+            )
+            return {"missing_views": missing_views, "status": status}
+
+        # Both mode - original logic with focus awareness
         has_youtube_focus = focus and FocusArea.YOUTUBE in focus.areas
         has_specs_focus = focus and FocusArea.SPECS in focus.areas
 
-        # If YouTube is focused, require at least one video source
         if has_youtube_focus:
             video_images = [
                 img for img in state.get("images", [])
                 if img.get("source") == "video"
             ]
             if not video_images and missing_views:
-                # Force at least one video extraction attempt
                 if "find_videos" not in [t.get("type") for t in state.get("tasks", [])]:
                     self.logger.info("YouTube focus: forcing video extraction")
 
-        # If specs are focused, check specification count
         if has_specs_focus:
             specs = state.get("specifications", {})
             if len(specs) < 3:
-                # Allow more iterations for spec collection
                 status = "incomplete" if missing_views or len(specs) < 5 else "complete"
             else:
                 status = "complete" if not missing_views else "incomplete"

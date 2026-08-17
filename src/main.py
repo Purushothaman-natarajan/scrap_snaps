@@ -4,6 +4,7 @@ import argparse
 import logging
 
 from src.config import (
+    COLLECT,
     DATABASE_URL,
     FOCUS_AREAS,
     MAX_ITERATIONS,
@@ -18,7 +19,7 @@ from src.search.focus import get_focus_config
 logger = logging.getLogger(__name__)
 
 
-def run_research(query: str, focus_areas: str | None = None):
+def run_research(query: str, focus_areas: str | None = None, collect: str | None = None):
     """Execute a research run for the given product query."""
     logger.info("Starting research for: %s", query)
 
@@ -27,6 +28,10 @@ def run_research(query: str, focus_areas: str | None = None):
     focus = get_focus_config(focus_raw)
     if focus.areas:
         logger.info("Focus areas: %s", [a.value for a in focus.areas])
+
+    # Use CLI collect if provided, otherwise fall back to config
+    collect_mode = collect or COLLECT
+    logger.info("Collect mode: %s", collect_mode)
 
     session = init_db(DATABASE_URL)
     logger.info("Database initialized at %s", DATABASE_URL)
@@ -37,6 +42,7 @@ def run_research(query: str, focus_areas: str | None = None):
         "query": query,
         "focus_areas": [a.value for a in focus.areas],
         "focus_config": focus.to_dict(),
+        "collect": collect_mode,
         "product": {},
         "candidates": [],
         "search_queries": [],
@@ -71,7 +77,7 @@ def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Autonomous Product Research Agent",
-        usage="%(prog)s <query> [--focus areas]",
+        usage="%(prog)s <query> [--focus areas] [--collect mode]",
     )
     parser.add_argument(
         "query",
@@ -80,6 +86,12 @@ def main():
     parser.add_argument(
         "--focus",
         help="Comma-separated focus areas (product_pages, seller_images, youtube, price_comparison, specs)",
+        default=None,
+    )
+    parser.add_argument(
+        "--collect",
+        choices=["specs", "images", "both"],
+        help="What to collect: specs (text only), images (images only), or both (default)",
         default=None,
     )
 
@@ -91,7 +103,7 @@ def main():
     )
 
     validate_env()
-    run_research(args.query, focus_areas=args.focus)
+    run_research(args.query, focus_areas=args.focus, collect=args.collect)
 
 
 if __name__ == "__main__":

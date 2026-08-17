@@ -14,6 +14,7 @@ class ResearchState(TypedDict):
     # Focus configuration
     focus_areas: list[str]
     focus_config: dict
+    collect: str  # specs, images, or both
 
     # Canonical identity
     product: dict
