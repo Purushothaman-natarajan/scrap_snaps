@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+import openai
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
@@ -28,14 +29,18 @@ def _get_azure_llm(temperature: float) -> ChatOpenAI:
     if not llm_config.azure_consumer_id:
         logger.warning("AZURE_CONSUMER_ID is missing. LLM calls may fail.")
 
-    return ChatOpenAI(
-        model=llm_config.azure_deployment,
-        temperature=temperature,
+    client = openai.OpenAI(
         api_key=llm_config.azure_api_key,
         base_url=f"{llm_config.azure_endpoint.rstrip('/')}/openai/v1/",
         default_headers={
             "X-Consumer-ID": llm_config.azure_consumer_id,
         },
+    )
+
+    return ChatOpenAI(
+        model=llm_config.azure_deployment,
+        temperature=temperature,
+        openai_client=client,
         max_retries=llm_config.max_retries,
         timeout=llm_config.timeout,
     )
