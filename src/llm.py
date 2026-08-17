@@ -1,9 +1,8 @@
-"""LLM client configuration with multi-provider support."""
+"""LLM client configuration - Azure OpenAI provider."""
 
 from functools import lru_cache
 
 from langchain_core.language_models import BaseChatModel
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from src.config.logging import get_logger
@@ -42,53 +41,26 @@ def _get_azure_llm(temperature: float) -> ChatOpenAI:
     )
 
 
-@lru_cache(maxsize=4)
-def _get_google_llm(temperature: float) -> ChatGoogleGenerativeAI:
-    """Create and cache Google GenAI LLM instance."""
-    llm_config = settings.llm
-
-    if not llm_config.google_api_key or llm_config.google_api_key == "your_google_api_key_here":
-        logger.warning("GOOGLE_API_KEY is missing or invalid. LLM calls will fail.")
-
-    return ChatGoogleGenerativeAI(
-        model=llm_config.google_model,
-        temperature=temperature,
-        google_api_key=llm_config.google_api_key,
-        max_retries=llm_config.max_retries,
-        timeout=llm_config.timeout,
-    )
-
-
-def get_llm(temperature: float = 0.0, provider: str | None = None) -> BaseChatModel:
-    """Return an LLM instance based on configuration.
+def get_llm(temperature: float = 0.0) -> BaseChatModel:
+    """Return an Azure OpenAI LLM instance.
 
     Args:
         temperature: Sampling temperature (0.0 = deterministic).
-        provider: Override provider ("azure" or "google"). Uses settings default if None.
 
     Returns:
         Configured LLM instance.
     """
-    provider = provider or settings.llm.provider
-
-    if provider == "azure":
-        return _get_azure_llm(temperature)
-    elif provider == "google":
-        return _get_google_llm(temperature)
-    else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
+    return _get_azure_llm(temperature)
 
 
-def get_vision_llm(temperature: float = 0.0, provider: str | None = None) -> BaseChatModel:
+def get_vision_llm(temperature: float = 0.0) -> BaseChatModel:
     """Return a vision-capable LLM instance.
 
-    Currently uses the same model as get_llm since both Azure and Google
-    support vision with their primary models.
+    Uses the same Azure OpenAI model which supports vision.
     """
-    return get_llm(temperature, provider)
+    return get_llm(temperature)
 
 
 def clear_llm_cache() -> None:
     """Clear the LLM instance cache. Useful for testing or config changes."""
     _get_azure_llm.cache_clear()
-    _get_google_llm.cache_clear()

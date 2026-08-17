@@ -178,7 +178,7 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
 def select_best_frames(
     frame_paths: list[str], views: list[str], max_per_view: int = 2
 ) -> dict[str, list[dict]]:
-    """Use Gemini Vision to select the best frames for each product view angle.
+    """Use LLM Vision to select the best frames for each product view angle.
 
     Analyzes all extracted frames and picks the best ones per view category
     based on: product visibility, focus quality, angle clarity.

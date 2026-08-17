@@ -6,7 +6,7 @@ using the new Pydantic Settings internally.
 
 from src.config.settings import settings
 
-# LLM (Azure OpenAI with Gemini)
+# LLM (Azure OpenAI)
 AZURE_API_KEY = settings.llm.azure_api_key
 AZURE_ENDPOINT = settings.llm.azure_endpoint
 AZURE_DEPLOYMENT = settings.llm.azure_deployment

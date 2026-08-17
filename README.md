@@ -4,61 +4,133 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        SCRAP_SNAPS ARCHITECTURE                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐          │
-│  │  config/ │    │  core/   │    │ agents/  │    │  nodes/  │          │
-│  │ settings │    │ registry │    │ business │    │  thin    │          │
-│  │ logging  │    │ graph    │    │  logic   │    │ wrappers │          │
-│  └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘          │
-│       │               │               │               │                 │
-│       └───────────────┴───────────────┴───────────────┘                 │
-│                               │                                         │
-│                    ┌──────────▼──────────┐                             │
-│                    │     tools/          │                             │
-│                    │  web/ media/ db/    │                             │
-│                    │  utils/             │                             │
-│                    └─────────────────────┘                             │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Config["config/ - Configuration"]
+        settings["settings.py<br/>Pydantic Settings"]
+        logging["logging.py<br/>structlog"]
+    end
+
+    subgraph Core["core/ - Infrastructure"]
+        registry["registry.py<br/>Plugin Registry"]
+        graph["graph.py<br/>Graph Builder"]
+    end
+
+    subgraph Agents["agents/ - Business Logic"]
+        base["BaseAgent"]
+        planner["PlannerAgent"]
+        researcher["ResearchAgent"]
+        media["MediaAgent"]
+        verifier["VerifierAgent"]
+        coverage["CoverageAgent"]
+    end
+
+    subgraph Nodes["nodes/ - LangGraph Wrappers"]
+        n_planner["planner"]
+        n_discovery["discovery"]
+        n_evidence["evidence"]
+        n_media["media"]
+        n_video["video_extract"]
+        n_verify["verification"]
+        n_coverage["coverage"]
+    end
+
+    subgraph Tools["tools/ - Modular Tools"]
+        subgraph Web["web/"]
+            search["search.py"]
+            fetch["fetch.py"]
+            robots["robots.py"]
+        end
+        subgraph MediaTools["media/"]
+            images["images.py"]
+            video["video.py"]
+        end
+        subgraph DB["db/"]
+            evidence_tool["evidence.py"]
+        end
+        subgraph Utils["utils/"]
+            http["http.py"]
+            hashing["hashing.py"]
+        end
+    end
+
+    Config --> Core
+    Core --> Agents
+    Agents --> Nodes
+    Nodes --> Tools
 ```
 
 ### Agent Graph Flow
 
+```mermaid
+graph TD
+    Start([START]) --> Planner[PLANNER]
+    
+    Planner -->|discover| Discovery[DISCOVER]
+    Planner -->|verify_spec| Evidence[EVIDENCE]
+    Planner -->|find_images| Media[MEDIA]
+    Planner -->|find_videos| VideoExtract[VIDEO_EXTRACT]
+    Planner -->|no tasks| Finalize[FINALIZE]
+    
+    Discovery --> Verify[VERIFY]
+    Evidence --> Verify
+    Media --> Verify
+    VideoExtract --> Verify
+    
+    Verify --> Coverage[COVERAGE]
+    
+    Coverage -->|incomplete| Planner
+    Coverage -->|complete| Finalize
+    
+    Finalize --> End([END])
+    
+    style Planner fill:#f9f,stroke:#333,stroke-width:2px
+    style Verify fill:#bbf,stroke:#333,stroke-width:2px
+    style Coverage fill:#bfb,stroke:#333,stroke-width:2px
+    style Finalize fill:#fbb,stroke:#333,stroke-width:2px
 ```
-                         ┌──────────┐
-                         │  START   │
-                         └────┬─────┘
-                              │
-                         ┌────▼─────┐
-                    ┌────│ PLANNER  │────┐────────┐
-                    │    └──────────┘    │        │
-                    │                    │        │
-             ┌──────▼──────┐   ┌────────▼──┐  ┌──▼──────────┐
-             │  DISCOVER   │   │  evidence  │  │ video_extract│
-             └──────┬──────┘   └─────┬─────┘  └──────┬───────┘
-                    │                │                │
-             ┌──────▼──────┐        │                │
-             │   (media)   │────────┘                │
-             └──────┬──────┘                         │
-                    └───────────────┬────────────────┘
-                                    │
-                               ┌────▼─────┐
-                               │  VERIFY  │
-                               └────┬─────┘
-                                    │
-                               ┌────▼──────┐
-                               │ COVERAGE  │── complete ──► FINALIZE ──► END
-                               └────┬──────┘
-                                    │
-                               more_research
-                                    │
-                               ┌────▼─────┐
-                               │ PLANNER  │ (loop back)
-                               └──────────┘
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Main
+    participant Graph
+    participant Planner
+    participant Agent
+    participant LLM
+    participant Tools
+    participant DB
+
+    User->>Main: query("Sony WH-1000XM5")
+    Main->>Graph: stream(initial_state)
+    
+    loop Until Complete
+        Graph->>Planner: state
+        Planner->>LLM: generate_tasks(state)
+        LLM-->>Planner: tasks[]
+        
+        alt discover task
+            Planner->>Agent: ResearchAgent.discover()
+            Agent->>Tools: search_web()
+            Tools-->>Agent: results[]
+            Agent->>LLM: extract_candidates()
+            LLM-->>Agent: candidates[]
+        else find_images task
+            Planner->>Agent: MediaAgent.collect_images()
+            Agent->>Tools: search_images()
+            Agent->>Tools: download_image()
+            Agent->>LLM: analyze_image()
+        end
+        
+        Agent-->>Graph: updated_state
+        Graph->>Graph: Verify (score)
+        Graph->>Graph: Coverage (gap check)
+    end
+    
+    Graph-->>Main: final_state
+    Main-->>User: results
 ```
 
 ## Project Structure
@@ -74,7 +146,7 @@ scrap_snaps/
 │   ├── config.py             # Backward-compatible config exports
 │   ├── graph.py              # Backward-compatible graph exports
 │   ├── tools.py              # Backward-compatible tool exports
-│   ├── llm.py                # Multi-provider LLM (Azure OpenAI + Google)
+│   ├── llm.py                # Azure OpenAI LLM client
 │   ├── main.py               # CLI entry point
 │   ├── state.py              # ResearchState TypedDict definition
 │   ├── db.py                 # SQLAlchemy models and DB init
@@ -164,17 +236,14 @@ cp .env.example .env
 
 All configuration is via environment variables. Copy `.env.example` to `.env` and edit.
 
-### LLM Provider (Azure OpenAI with Gemini)
+### LLM Provider (Azure OpenAI)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_PROVIDER` | `azure` | LLM provider: `azure` or `google` |
-| `AZURE_API_KEY` | *(required for azure)* | Azure OpenAI API key |
-| `AZURE_ENDPOINT` | *(required for azure)* | Azure OpenAI endpoint URL |
-| `AZURE_DEPLOYMENT` | *(required for azure)* | Azure deployment name |
-| `AZURE_CONSUMER_ID` | *(required for azure)* | Azure consumer ID |
-| `GOOGLE_API_KEY` | *(required for google)* | Google Gemini API key |
-| `LLM_MODEL` | `gemini-1.5-pro-latest` | Gemini model (when using Google) |
+| `AZURE_API_KEY` | *(required)* | Azure OpenAI API key |
+| `AZURE_ENDPOINT` | *(required)* | Azure OpenAI endpoint URL (e.g., `https://your-resource.openai.azure.com/`) |
+| `AZURE_DEPLOYMENT` | *(required)* | Azure deployment name (model deployment identifier) |
+| `AZURE_CONSUMER_ID` | *(required)* | Azure consumer ID (for request tracking) |
 
 ### Execution
 
@@ -219,7 +288,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `VIDEO_MAX_DURATION` | `900` | Max video duration in seconds |
 | `VIDEO_FRAME_INTERVAL` | `2.0` | Supplemental frame sampling interval (seconds) |
 | `VIDEO_MAX_RESOLUTION` | `720` | Max video resolution to download |
-| `AI_FRAME_SELECTION` | `true` | Use LLM for best frame selection |
+| `AI_FRAME_SELECTION` | `true` | Use LLM Vision to select best frames |
 
 ### Verification
 

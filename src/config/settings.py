@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,18 +13,11 @@ class LLMConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="LLM_", env_nested_delimiter="__")
 
-    # Azure OpenAI (primary)
+    # Azure OpenAI
     azure_api_key: str = Field(default="", alias="AZURE_API_KEY")
     azure_endpoint: str = Field(default="", alias="AZURE_ENDPOINT")
     azure_deployment: str = Field(default="", alias="AZURE_DEPLOYMENT")
     azure_consumer_id: str = Field(default="", alias="AZURE_CONSUMER_ID")
-
-    # Google GenAI (fallback)
-    google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
-    google_model: str = Field(default="gemini-1.5-pro-latest", alias="LLM_MODEL")
-
-    # Provider selection
-    provider: Literal["azure", "google"] = Field(default="azure", alias="LLM_PROVIDER")
 
     # Common
     temperature: float = Field(default=0.0, alias="LLM_TEMPERATURE")
@@ -163,16 +155,12 @@ class Settings(BaseSettings):
     def validate_required(self) -> list[str]:
         """Validate required settings are present. Returns list of missing keys."""
         missing = []
-        if self.llm.provider == "azure":
-            if not self.llm.azure_api_key:
-                missing.append("AZURE_API_KEY")
-            if not self.llm.azure_endpoint:
-                missing.append("AZURE_ENDPOINT")
-            if not self.llm.azure_deployment:
-                missing.append("AZURE_DEPLOYMENT")
-        else:
-            if not self.llm.google_api_key:
-                missing.append("GOOGLE_API_KEY")
+        if not self.llm.azure_api_key:
+            missing.append("AZURE_API_KEY")
+        if not self.llm.azure_endpoint:
+            missing.append("AZURE_ENDPOINT")
+        if not self.llm.azure_deployment:
+            missing.append("AZURE_DEPLOYMENT")
         return missing
 
 
