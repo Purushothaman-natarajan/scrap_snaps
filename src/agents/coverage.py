@@ -18,35 +18,62 @@ class CoverageAgent(BaseAgent):
         """Extract FocusConfig from state."""
         return FocusConfig.from_dict(state.get("focus_config", {}))
 
+    def _can_collect_specs(self, state: dict) -> bool:
+        """Check if we should collect specs."""
+        return state.get("collect_specs", True)
+
+    def _can_collect_media(self, state: dict) -> str:
+        """Check what media we should collect: images, videos, or both."""
+        return state.get("collect_media", "both")
+
     def analyze(self, state: dict) -> dict:
         """Evaluate what is missing based on collect mode."""
         self.logger.info("Coverage agent executing")
 
-        collect = state.get("collect", "both")
+        collect_specs = self._can_collect_specs(state)
+        collect_media = self._can_collect_media(state)
         focus = self._get_focus(state)
 
         required_views = state.get("required_views", [])
         discovered_views = state.get("discovered_views", {})
         missing_views = [v for v in required_views if v not in discovered_views]
 
-        # Specs only mode
-        if collect == "specs":
-            specs = state.get("specifications", {})
-            status = "complete" if len(specs) >= 3 else "incomplete"
-            self.logger.info("Coverage (specs): %d specs collected", len(specs))
-            return {"missing_views": [], "status": status}
+        specs = state.get("specifications", {})
+        images_count = len(state.get("images", []))
+        videos_count = len(state.get("videos", []))
 
-        # Images only mode
-        if collect == "images":
+        # No specs mode - skip spec requirements
+        if not collect_specs:
+            if collect_media == "videos":
+                status = "complete" if videos_count >= 2 else "incomplete"
+                self.logger.info("Coverage (videos only): %d videos", videos_count)
+                return {"missing_views": [], "status": status}
+
+            if collect_media == "images":
+                status = "complete" if not missing_views else "incomplete"
+                self.logger.info(
+                    "Coverage (images only): %d/%d views found",
+                    len(required_views) - len(missing_views),
+                    len(required_views),
+                )
+                return {"missing_views": missing_views, "status": status}
+
+            # Both images+videos, no specs
             status = "complete" if not missing_views else "incomplete"
             self.logger.info(
-                "Coverage (images): %d/%d views found",
+                "Coverage (media only): %d/%d views found",
                 len(required_views) - len(missing_views),
                 len(required_views),
             )
             return {"missing_views": missing_views, "status": status}
 
-        # Both mode - original logic with focus awareness
+        # Specs mode, no media
+        if collect_media is None:
+            status = "complete" if len(specs) >= 5 else "incomplete"
+            self.logger.info("Coverage (specs only): %d specs collected", len(specs))
+            return {"missing_views": [], "status": status}
+
+        # Full mode - both specs and media
         has_youtube_focus = focus and FocusArea.YOUTUBE in focus.areas
         has_specs_focus = focus and FocusArea.SPECS in focus.areas
 
@@ -60,7 +87,6 @@ class CoverageAgent(BaseAgent):
                     self.logger.info("YouTube focus: forcing video extraction")
 
         if has_specs_focus:
-            specs = state.get("specifications", {})
             if len(specs) < 3:
                 status = "incomplete" if missing_views or len(specs) < 5 else "complete"
             else:
@@ -68,12 +94,11 @@ class CoverageAgent(BaseAgent):
         else:
             status = "complete" if not missing_views else "incomplete"
 
-        images_count = len(state.get("images", []))
-        videos_count = len(state.get("videos", []))
         self.logger.info(
-            "Coverage: %d/%d views found, %d images, %d videos",
+            "Coverage: %d/%d views found, %d specs, %d images, %d videos",
             len(required_views) - len(missing_views),
             len(required_views),
+            len(specs),
             images_count,
             videos_count,
         )

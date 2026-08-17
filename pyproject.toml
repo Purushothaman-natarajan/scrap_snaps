@@ -30,6 +30,7 @@ dependencies = [
     "numpy>=1.26.0",
     "scenedetect>=0.6.2",
     "structlog>=24.1.0",
+    "openpyxl>=3.1.2",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +41,7 @@ dev = [
 
 [project.scripts]
 scrap-snaps = "src.main:main"
+scrap-snaps-pipeline = "src.pipeline.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Purushothaman-natarajan/scrap_snaps"

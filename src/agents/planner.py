@@ -35,6 +35,14 @@ class PlannerAgent(BaseAgent):
         """Extract FocusConfig from state."""
         return FocusConfig.from_dict(state.get("focus_config", {}))
 
+    def _can_collect_specs(self, state: dict) -> bool:
+        """Check if we should collect specs."""
+        return state.get("collect_specs", True)
+
+    def _can_collect_media(self, state: dict) -> str:
+        """Check what media we should collect: images, videos, or both."""
+        return state.get("collect_media", "both")
+
     def run(self, state: dict) -> dict:
         """Execute the planner logic."""
         self.logger.info("Planner agent executing")
@@ -52,7 +60,8 @@ class PlannerAgent(BaseAgent):
 
         llm = self.get_llm().with_structured_output(PlannerOutput)
         focus = self._get_focus(state)
-        collect = state.get("collect", "both")
+        collect_specs = self._can_collect_specs(state)
+        collect_media = self._can_collect_media(state)
 
         # Build focus-aware context for the planner
         focus_context = ""
@@ -61,11 +70,14 @@ class PlannerAgent(BaseAgent):
             focus_context = f"\n- Focus Areas: {', '.join(area_names)}"
 
         # Build collect context
-        collect_context = f"\n- Collect Mode: {collect}"
-        if collect == "specs":
-            collect_context += "\n  (Only collect specifications/text, skip image/video tasks)"
-        elif collect == "images":
-            collect_context += "\n  (Only collect images/videos, skip spec extraction tasks)"
+        collect_context = f"\n- Collect Specs: {collect_specs}"
+        collect_context += f"\n- Collect Media: {collect_media}"
+        if not collect_specs:
+            collect_context += "\n  (Skip spec extraction tasks)"
+        if collect_media == "images":
+            collect_context += "\n  (Only image search, no video extraction)"
+        elif collect_media == "videos":
+            collect_context += "\n  (Only video extraction, no image search)"
 
         prompt = f"""
         You are the Planner for an autonomous Product Research Agent.
@@ -99,7 +111,8 @@ class PlannerAgent(BaseAgent):
 
     def _fallback_tasks(self, state: dict, iterations: int, focus: FocusConfig | None = None) -> dict:
         """Generate fallback tasks when LLM fails."""
-        collect = state.get("collect", "both")
+        collect_specs = self._can_collect_specs(state)
+        collect_media = self._can_collect_media(state)
 
         if not state.get("product"):
             return {
@@ -107,8 +120,27 @@ class PlannerAgent(BaseAgent):
                 "iterations": iterations,
             }
 
-        # Specs only mode - skip image/video tasks
-        if collect == "specs":
+        # No specs mode - skip verify_spec tasks
+        if not collect_specs:
+            if collect_media == "images" and state.get("missing_views"):
+                return {
+                    "tasks": [{"type": "find_images", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "iterations": iterations,
+                }
+            elif collect_media == "videos" and state.get("missing_views"):
+                return {
+                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "iterations": iterations,
+                }
+            elif collect_media == "both" and state.get("missing_views"):
+                return {
+                    "tasks": [{"type": "find_images", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "iterations": iterations,
+                }
+            return {"tasks": [], "iterations": iterations}
+
+        # Specs mode only - no media tasks
+        if collect_media is None:
             if len(state.get("specifications", {})) < 5:
                 return {
                     "tasks": [{"type": "verify_spec", "target": "general", "priority": 0.9}],
@@ -116,60 +148,35 @@ class PlannerAgent(BaseAgent):
                 }
             return {"tasks": [], "iterations": iterations}
 
-        # Images only mode - skip spec tasks
-        if collect == "images":
-            if state.get("missing_views"):
-                return {
-                    "tasks": [
-                        {
-                            "type": "find_images",
-                            "target": state.get("missing_views")[0],
-                            "priority": 0.9,
-                        }
-                    ],
-                    "iterations": iterations,
-                }
-            return {"tasks": [], "iterations": iterations}
-
-        # Both mode - original logic
+        # Full mode - both specs and media
         has_youtube_focus = focus and FocusArea.YOUTUBE in focus.areas
         has_specs_focus = focus and FocusArea.SPECS in focus.areas
 
         if state.get("missing_views"):
             images_count = len(state.get("images", []))
 
-            if has_youtube_focus and images_count < 5:
+            # Videos only
+            if collect_media == "videos":
                 return {
-                    "tasks": [
-                        {
-                            "type": "find_videos",
-                            "target": state.get("missing_views")[0],
-                            "priority": 0.9,
-                        }
-                    ],
+                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "iterations": iterations,
+                }
+
+            # Images only or both
+            if has_youtube_focus and collect_media == "both" and images_count < 5:
+                return {
+                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.9}],
                     "iterations": iterations,
                 }
 
             if images_count < 3:
                 return {
-                    "tasks": [
-                        {
-                            "type": "find_images",
-                            "target": state.get("missing_views")[0],
-                            "priority": 0.9,
-                        }
-                    ],
+                    "tasks": [{"type": "find_images", "target": state.get("missing_views")[0], "priority": 0.9}],
                     "iterations": iterations,
                 }
-            else:
+            elif collect_media == "both":
                 return {
-                    "tasks": [
-                        {
-                            "type": "find_videos",
-                            "target": state.get("missing_views")[0],
-                            "priority": 0.8,
-                        }
-                    ],
+                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.8}],
                     "iterations": iterations,
                 }
 

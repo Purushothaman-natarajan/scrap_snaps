@@ -4,7 +4,8 @@ import argparse
 import logging
 
 from src.config import (
-    COLLECT,
+    COLLECT_MEDIA,
+    COLLECT_SPECS,
     DATABASE_URL,
     FOCUS_AREAS,
     MAX_ITERATIONS,
@@ -19,19 +20,23 @@ from src.search.focus import get_focus_config
 logger = logging.getLogger(__name__)
 
 
-def run_research(query: str, focus_areas: str | None = None, collect: str | None = None):
+def run_research(
+    query: str,
+    focus_areas: str | None = None,
+    collect_specs: bool | None = None,
+    collect_media: str | None = None,
+):
     """Execute a research run for the given product query."""
     logger.info("Starting research for: %s", query)
 
-    # Use CLI focus if provided, otherwise fall back to config
     focus_raw = focus_areas or FOCUS_AREAS
     focus = get_focus_config(focus_raw)
     if focus.areas:
         logger.info("Focus areas: %s", [a.value for a in focus.areas])
 
-    # Use CLI collect if provided, otherwise fall back to config
-    collect_mode = collect or COLLECT
-    logger.info("Collect mode: %s", collect_mode)
+    specs = collect_specs if collect_specs is not None else COLLECT_SPECS
+    media = collect_media if collect_media is not None else COLLECT_MEDIA
+    logger.info("Collect specs: %s, collect media: %s", specs, media)
 
     session = init_db(DATABASE_URL)
     logger.info("Database initialized at %s", DATABASE_URL)
@@ -42,7 +47,8 @@ def run_research(query: str, focus_areas: str | None = None, collect: str | None
         "query": query,
         "focus_areas": [a.value for a in focus.areas],
         "focus_config": focus.to_dict(),
-        "collect": collect_mode,
+        "collect_specs": specs,
+        "collect_media": media,
         "product": {},
         "candidates": [],
         "search_queries": [],
@@ -77,7 +83,7 @@ def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Autonomous Product Research Agent",
-        usage="%(prog)s <query> [--focus areas] [--collect mode]",
+        usage="%(prog)s <query> [--focus areas] [--collect-specs] [--collect-media mode]",
     )
     parser.add_argument(
         "query",
@@ -89,10 +95,22 @@ def main():
         default=None,
     )
     parser.add_argument(
-        "--collect",
-        choices=["specs", "images", "both"],
-        help="What to collect: specs (text only), images (images only), or both (default)",
+        "--collect-specs",
+        action="store_true",
         default=None,
+        help="Collect specifications (enabled by default)",
+    )
+    parser.add_argument(
+        "--no-collect-specs",
+        dest="collect_specs",
+        action="store_false",
+        help="Disable specification collection",
+    )
+    parser.add_argument(
+        "--collect-media",
+        choices=["images", "videos", "both", "none"],
+        default=None,
+        help="What media to collect: images, videos, both (default), or none",
     )
 
     args = parser.parse_args()
@@ -103,7 +121,12 @@ def main():
     )
 
     validate_env()
-    run_research(args.query, focus_areas=args.focus, collect=args.collect)
+    run_research(
+        args.query,
+        focus_areas=args.focus,
+        collect_specs=args.collect_specs,
+        collect_media=args.collect_media,
+    )
 
 
 if __name__ == "__main__":

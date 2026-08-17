@@ -38,8 +38,17 @@ class MediaAgent(BaseAgent):
         """Extract FocusConfig from state."""
         return FocusConfig.from_dict(state.get("focus_config", {}))
 
+    def _can_collect_media(self, state: dict) -> str:
+        """Check what media we should collect: images, videos, or both."""
+        return state.get("collect_media", "both")
+
     def collect_images(self, state: dict) -> dict:
         """Image search -> download -> deduplicate -> classify views."""
+        if self._can_collect_media(state) == "videos":
+            self.logger.info("Skipping image collection (collect_media=videos)")
+            tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_images")
+            return {"tasks": tasks}
+
         self.logger.info("Media agent: collecting images")
         product = state.get("product", {})
         query = product.get("name", state.get("query", ""))
@@ -52,7 +61,6 @@ class MediaAgent(BaseAgent):
                 target_view = t.get("target")
                 break
 
-        # Build focus-aware queries for image search
         queries = build_queries(query, focus=focus, task_type="find_images", limit=2)
         if queries:
             search_q = queries[0].query
@@ -105,6 +113,11 @@ class MediaAgent(BaseAgent):
 
     def collect_videos(self, state: dict) -> dict:
         """Search YouTube -> download -> extract frames -> classify views."""
+        if self._can_collect_media(state) == "images":
+            self.logger.info("Skipping video collection (collect_media=images)")
+            tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
+            return {"tasks": tasks}
+
         self.logger.info("Media agent: collecting videos")
 
         product = state.get("product", {})
@@ -112,7 +125,6 @@ class MediaAgent(BaseAgent):
         missing_views = state.get("missing_views", REQUIRED_VIEWS.copy())
         focus = self._get_focus(state)
 
-        # Build focus-aware queries for video search
         queries = build_queries(query, focus=focus, task_type="find_videos", limit=2)
         if queries:
             search_q = queries[0].query
