@@ -5,36 +5,30 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 ## Architecture Overview
 
 ```mermaid
-block-beta
-    columns 5
-
-    block:CONFIG:1
-        columns 1
-        CFG["⚙️ Config"]
+graph LR
+    subgraph Config["Config Layer"]
+        direction TB
         SETTINGS["Pydantic Settings"]
         LOGGING["structlog"]
     end
 
-    block:CORE:1
-        columns 1
-        INFRA["🔧 Core"]
+    subgraph Core["Core Layer"]
+        direction TB
         REGISTRY["Plugin Registry"]
         GRAPH["Graph Builder"]
     end
 
-    block:AGENTS:1
-        columns 1
-        BIZ["🧠 Agents"]
+    subgraph Agents["Agent Layer"]
+        direction TB
         PLANNER["Planner"]
         RESEARCHER["Researcher"]
-        MEDIA["Media"]
+        MEDIA_COLLECTOR["Media"]
         VERIFIER["Verifier"]
         COVERAGE["Coverage"]
     end
 
-    block:NODES:1
-        columns 1
-        LG["🔗 LangGraph"]
+    subgraph Nodes["LangGraph Layer"]
+        direction TB
         N_PLAN["planner"]
         N_DISC["discovery"]
         N_EVID["evidence"]
@@ -43,23 +37,21 @@ block-beta
         N_COV["coverage"]
     end
 
-    block:TOOLS:1
-        columns 1
-        T["🛠️ Tools"]
-        subgraph WEB["web/"]
-            W1["search"]
-            W2["fetch"]
-            W3["robots"]
-        end
-        subgraph MEDIA_T["media/"]
-            M1["images"]
-            M2["video"]
-        end
-        DB_T["db/evidence"]
+    subgraph Tools["Tool Layer"]
+        direction TB
+        WEB["web/"]
+        MEDIA_TOOLS["media/"]
+        DB["db/"]
         UTILS["utils/"]
     end
 
-    CONFIG --> CORE --> AGENTS --> NODES --> TOOLS
+    Config --> Core --> Agents --> Nodes --> Tools
+
+    style Config fill:#FFF7E6,stroke:#B45309
+    style Core fill:#FFF7E6,stroke:#B45309
+    style Agents fill:#E8F5E9,stroke:#2E7D32
+    style Nodes fill:#E3F2FD,stroke:#1565C0
+    style Tools fill:#F3E5F5,stroke:#7B1FA2
 ```
 
 **Layer Responsibilities:**
