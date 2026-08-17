@@ -258,6 +258,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `SERPAPI_KEY` | *(required)* | SerpAPI key for Google Search ([get one](https://serpapi.com/)) |
 | `RATE_LIMIT_INTERVAL` | `1.0` | Minimum seconds between HTTP requests |
 | `REQUEST_TIMEOUT` | `10.0` | HTTP request timeout in seconds |
 | `USER_AGENT` | *(Chrome UA)* | User-Agent header for HTTP requests |
@@ -325,9 +326,9 @@ The agent uses 14 tools organized by domain:
 
 | Tool | Module | Description |
 |------|--------|-------------|
-| `search_web` | `tools/web/search.py` | Text search via DuckDuckGo with HTML fallback |
-| `search_images` | `tools/web/search.py` | Image search via DuckDuckGo |
-| `search_videos` | `tools/web/search.py` | Search for YouTube product review videos |
+| `search_web` | `tools/web/search.py` | Google search via SerpAPI |
+| `search_images` | `tools/web/search.py` | Google image search via SerpAPI |
+| `search_videos` | `tools/web/search.py` | YouTube search via SerpAPI |
 | `fetch_page` | `tools/web/fetch.py` | Fetch static HTML pages with retry and rate limiting |
 | `fetch_page_js` | `tools/web/fetch.py` | Fetch JS-rendered pages via Playwright |
 | `extract_structured_data` | `tools/web/fetch.py` | Parse HTML tables, lists, and metadata |

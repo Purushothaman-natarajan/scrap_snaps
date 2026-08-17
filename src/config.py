@@ -21,6 +21,7 @@ RECURSION_LIMIT = settings.execution.recursion_limit
 REQUIRED_VIEWS = settings.execution.required_views_list
 
 # Networking
+SERPAPI_KEY = settings.network.serpapi_key
 RATE_LIMIT_INTERVAL = settings.network.rate_limit_interval
 REQUEST_TIMEOUT = settings.network.request_timeout
 USER_AGENT = settings.network.user_agent

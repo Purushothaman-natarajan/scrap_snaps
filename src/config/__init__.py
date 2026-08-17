@@ -18,6 +18,7 @@ MAX_ITERATIONS = settings.execution.max_iterations
 RECURSION_LIMIT = settings.execution.recursion_limit
 REQUIRED_VIEWS = settings.execution.required_views_list
 
+SERPAPI_KEY = settings.network.serpapi_key
 RATE_LIMIT_INTERVAL = settings.network.rate_limit_interval
 REQUEST_TIMEOUT = settings.network.request_timeout
 USER_AGENT = settings.network.user_agent
@@ -54,6 +55,7 @@ __all__ = [
     "MAX_ITERATIONS",
     "RECURSION_LIMIT",
     "REQUIRED_VIEWS",
+    "SERPAPI_KEY",
     "RATE_LIMIT_INTERVAL",
     "REQUEST_TIMEOUT",
     "USER_AGENT",

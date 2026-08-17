@@ -55,6 +55,7 @@ class NetworkConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="NET_", env_nested_delimiter="__")
 
+    serpapi_key: str = Field(default="", alias="SERPAPI_KEY")
     rate_limit_interval: float = Field(default=1.0, alias="RATE_LIMIT_INTERVAL")
     request_timeout: float = Field(default=10.0, alias="REQUEST_TIMEOUT")
     user_agent: str = Field(
