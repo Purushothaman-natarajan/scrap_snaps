@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "scrap-snaps"
@@ -46,8 +46,8 @@ Homepage = "https://github.com/Purushothaman-natarajan/scrap_snaps"
 Repository = "https://github.com/Purushothaman-natarajan/scrap_snaps"
 Issues = "https://github.com/Purushothaman-natarajan/scrap_snaps/issues"
 
-[tool.setuptools.packages.find]
-include = ["src*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [tool.ruff]
 line-length = 100

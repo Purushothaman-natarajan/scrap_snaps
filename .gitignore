@@ -18,6 +18,10 @@ venv/
 .venv/
 env/
 
+# PDM
+.pdm-python
+.pdm-build/
+
 # IDE
 .vscode/
 .idea/
