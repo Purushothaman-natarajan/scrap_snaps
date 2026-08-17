@@ -5,89 +5,104 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 ## Architecture Overview
 
 ```mermaid
-graph TB
-    subgraph Config["config/ - Configuration"]
-        settings["settings.py<br/>Pydantic Settings"]
-        logmod["logging.py<br/>structlog"]
+block-beta
+    columns 5
+
+    block:CONFIG:1
+        columns 1
+        CFG["⚙️ Config"]
+        SETTINGS["Pydantic Settings"]
+        LOGGING["structlog"]
     end
 
-    subgraph Core["core/ - Infrastructure"]
-        registry["registry.py<br/>Plugin Registry"]
-        graphmod["graph.py<br/>Graph Builder"]
+    block:CORE:1
+        columns 1
+        INFRA["🔧 Core"]
+        REGISTRY["Plugin Registry"]
+        GRAPH["Graph Builder"]
     end
 
-    subgraph Agents["agents/ - Business Logic"]
-        base["BaseAgent"]
-        planner["PlannerAgent"]
-        researcher["ResearchAgent"]
-        media["MediaAgent"]
-        verifier["VerifierAgent"]
-        coverage["CoverageAgent"]
+    block:AGENTS:1
+        columns 1
+        BIZ["🧠 Agents"]
+        PLANNER["Planner"]
+        RESEARCHER["Researcher"]
+        MEDIA["Media"]
+        VERIFIER["Verifier"]
+        COVERAGE["Coverage"]
     end
 
-    subgraph Nodes["nodes/ - LangGraph Wrappers"]
-        n_planner["planner"]
-        n_discovery["discovery"]
-        n_evidence["evidence"]
-        n_media["media"]
-        n_video["video_extract"]
-        n_verify["verification"]
-        n_coverage["coverage"]
+    block:NODES:1
+        columns 1
+        LG["🔗 LangGraph"]
+        N_PLAN["planner"]
+        N_DISC["discovery"]
+        N_EVID["evidence"]
+        N_MEDIA["media"]
+        N_VERIFY["verification"]
+        N_COV["coverage"]
     end
 
-    subgraph Tools["tools/ - Modular Tools"]
-        subgraph Web["web/"]
-            search["search.py"]
-            fetch["fetch.py"]
-            robots["robots.py"]
+    block:TOOLS:1
+        columns 1
+        T["🛠️ Tools"]
+        subgraph WEB["web/"]
+            W1["search"]
+            W2["fetch"]
+            W3["robots"]
         end
-        subgraph MediaTools["media/"]
-            images["images.py"]
-            video["video.py"]
+        subgraph MEDIA_T["media/"]
+            M1["images"]
+            M2["video"]
         end
-        subgraph DB["db/"]
-            evidence_tool["evidence.py"]
-        end
-        subgraph Utils["utils/"]
-            http["http.py"]
-            hashing["hashing.py"]
-        end
+        DB_T["db/evidence"]
+        UTILS["utils/"]
     end
 
-    Config --> Core
-    Core --> Agents
-    Agents --> Nodes
-    Nodes --> Tools
+    CONFIG --> CORE --> AGENTS --> NODES --> TOOLS
 ```
+
+**Layer Responsibilities:**
+| Layer | Purpose | Components |
+|-------|---------|------------|
+| Config | App settings & logging | Pydantic Settings, structlog |
+| Core | Infrastructure & orchestration | Plugin registry, graph builder |
+| Agents | Business logic & reasoning | Planner, Researcher, Media, Verifier, Coverage |
+| LangGraph | Execution & state management | Node wrappers for each agent |
+| Tools | External integrations | Web search, media, database, utilities |
 
 ### Agent Graph Flow
 
 ```mermaid
-graph TD
-    Start([START]) --> Planner[PLANNER]
+flowchart TD
+    Start(["▶️ START"]) --> PLANNER["🧠 Planner"]
     
-    Planner -->|discover| Discovery[DISCOVER]
-    Planner -->|verify_spec| Evidence[EVIDENCE]
-    Planner -->|find_images| Media[MEDIA]
-    Planner -->|find_videos| VideoExtract[VIDEO_EXTRACT]
-    Planner -->|no tasks| Finalize[FINALIZE]
+    PLANNER -- "discover" --> DISCOVER["🔍 Discovery"]
+    PLANNER -- "verify_spec" --> EVIDENCE["📋 Evidence"]
+    PLANNER -- "find_images" --> MEDIA_COLLECTOR["🖼️ Media"]
+    PLANNER -- "find_videos" --> VIDEO_EXTRACTOR["🎬 Video"]
+    PLANNER -- "no tasks" --> FINALIZE["✅ Finalize"]
     
-    Discovery --> Verify[VERIFY]
-    Evidence --> Verify
-    Media --> Verify
-    VideoExtract --> Verify
+    DISCOVER --> VERIFY
+    EVIDENCE --> VERIFY
+    MEDIA_COLLECTOR --> VERIFY
+    VIDEO_EXTRACTOR --> VERIFY
     
-    Verify --> Coverage[COVERAGE]
+    VERIFY["🔎 Verify"] --> COVERAGE["📊 Coverage"]
     
-    Coverage -->|incomplete| Planner
-    Coverage -->|complete| Finalize
+    COVERAGE -- "incomplete" --> PLANNER
+    COVERAGE -- "complete" --> FINALIZE
     
-    Finalize --> End([END])
+    FINALIZE --> End(["⏹️ END"])
     
-    style Planner fill:#f9f,stroke:#333,stroke-width:2px
-    style Verify fill:#bbf,stroke:#333,stroke-width:2px
-    style Coverage fill:#bfb,stroke:#333,stroke-width:2px
-    style Finalize fill:#fbb,stroke:#333,stroke-width:2px
+    style PLANNER fill:#E8D5FF,stroke:#6B21A8,stroke-width:2px,color:#000
+    style VERIFY fill:#D5F0FF,stroke:#1E40AF,stroke-width:2px,color:#000
+    style COVERAGE fill:#D5FFE8,stroke:#166534,stroke-width:2px,color:#000
+    style FINALIZE fill:#FFE8D5,stroke:#9A3412,stroke-width:2px,color:#000
+    style DISCOVER fill:#FFF,stroke:#333,stroke-width:1px
+    style EVIDENCE fill:#FFF,stroke:#333,stroke-width:1px
+    style MEDIA_COLLECTOR fill:#FFF,stroke:#333,stroke-width:1px
+    style VIDEO_EXTRACTOR fill:#FFF,stroke:#333,stroke-width:1px
 ```
 
 ### Data Flow
