@@ -8,12 +8,12 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 graph TB
     subgraph Config["config/ - Configuration"]
         settings["settings.py<br/>Pydantic Settings"]
-        logging["logging.py<br/>structlog"]
+        logmod["logging.py<br/>structlog"]
     end
 
     subgraph Core["core/ - Infrastructure"]
         registry["registry.py<br/>Plugin Registry"]
-        graph["graph.py<br/>Graph Builder"]
+        graphmod["graph.py<br/>Graph Builder"]
     end
 
     subgraph Agents["agents/ - Business Logic"]
