@@ -1,6 +1,7 @@
 """Structured logging configuration using structlog."""
 
 import logging
+import os
 import sys
 from typing import Any
 
@@ -13,12 +14,6 @@ from src.config.settings import settings
 def add_service_name(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
     """Add service name to all log entries."""
     event_dict["service"] = "scrap-snaps"
-    return event_dict
-
-
-def add_log_level(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
-    """Add log level to event dict."""
-    event_dict["level"] = method_name.upper()
     return event_dict
 
 
@@ -50,12 +45,28 @@ def configure_logging(
         else settings.log_timestamp
     )
 
-    # Standard library logging config
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, log_level.upper(), logging.INFO),
-    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+    # Clear existing handlers
+    root_logger.handlers.clear()
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    root_logger.addHandler(console_handler)
+
+    # File handler for detailed capture
+    if settings.log_capture:
+        log_dir = os.path.dirname(settings.log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+
+        file_handler = logging.FileHandler(settings.log_file, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)  # Capture everything to file
+        file_formatter = logging.Formatter("%(message)s")
+        file_handler.setFormatter(file_formatter)
+        root_logger.addHandler(file_handler)
 
     # Shared processors
     shared_processors: list[Processor] = [
@@ -74,12 +85,10 @@ def configure_logging(
         shared_processors.append(structlog.processors.TimeStamper(fmt="iso", utc=True))
 
     if json_logs:
-        # JSON output for production/log aggregation
         processors = shared_processors + [
             structlog.processors.JSONRenderer(),
         ]
     else:
-        # Human-readable output for development
         processors = shared_processors + [
             structlog.dev.ConsoleRenderer(colors=True),
         ]

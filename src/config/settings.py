@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     log_json: bool = Field(default=False)
     log_timestamp: bool = Field(default=True)
+    log_capture: bool = Field(default=True)
+    log_file: str = Field(default="logs/scrap_snaps.log")
 
     @property
     def required_views_list(self) -> list[str]:

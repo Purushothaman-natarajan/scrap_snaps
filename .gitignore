@@ -44,6 +44,9 @@ htmlcov/
 *.db
 *.sqlite3
 
+# Logs
+logs/
+
 # Downloads
 downloads/
 *.jpg
