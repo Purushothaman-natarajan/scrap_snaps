@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     search_cache_size: int = Field(default=500)
     serpapi_max_hits_per_row: int = Field(default=20)
 
+    # === Failed URL Tracking ===
+    failed_url_ttl: float = Field(default=300.0)  # seconds before retry (default: 5 min)
+
     @property
     def required_views_list(self) -> list[str]:
         return [v.strip() for v in self.required_views.split(",")]

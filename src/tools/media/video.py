@@ -16,16 +16,14 @@ from src.config import (
 from src.config.logging import get_logger
 from src.llm import get_vision_llm
 from src.tools.logging import log_tool_call
+from src.tools.utils.failed_urls import get_failed_url_tracker
 
 logger = get_logger(__name__)
-
-# Module-level set of permanently failed video URLs (bot detection, etc.)
-_failed_video_urls: set[str] = set()
 
 
 def is_video_url_failed(url: str) -> bool:
     """Check if a video URL has permanently failed."""
-    return url in _failed_video_urls
+    return get_failed_url_tracker().is_failed(url)
 
 
 def score_video(video: dict) -> float:
@@ -80,7 +78,8 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str =
     Downloads at capped resolution (default 720p) to save bandwidth.
     Returns the local file path, or empty string on failure.
     """
-    if url in _failed_video_urls:
+    tracker = get_failed_url_tracker()
+    if tracker.is_failed(url):
         logger.debug("Skipping previously failed video URL: %s", url)
         return ""
 
@@ -114,7 +113,7 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str =
             info = ydl.extract_info(url, download=True)
             if info is None:
                 logger.error("Failed to extract info for %s", url)
-                _failed_video_urls.add(url)
+                tracker.add(url)
                 return ""
             filename = ydl.prepare_filename(info)
             if not os.path.exists(filename):
@@ -126,7 +125,7 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str =
             return filename
 
         logger.error("Video file not found after download: %s", filename)
-        _failed_video_urls.add(url)
+        tracker.add(url)
         return ""
     except ImportError:
         logger.error("yt-dlp not installed. Run: pip install yt-dlp")
@@ -134,11 +133,11 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str =
     except Exception as e:
         error_str = str(e).lower()
         if any(kw in error_str for kw in ("bot", "sign in", "confirm", "blocked", "captcha")):
-            _failed_video_urls.add(url)
+            tracker.add(url)
             logger.warning("Permanently failed video URL (bot detection): %s", url)
         else:
             logger.error("Failed to download video %s: %s", url, e)
-            _failed_video_urls.add(url)
+            tracker.add(url)
         return ""
 
 

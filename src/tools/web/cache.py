@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from src.config import SEARCH_CACHE_SIZE, SERPAPI_MAX_HITS_PER_ROW
@@ -10,11 +11,27 @@ from src.config.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _normalize_query(q: str) -> str:
+    """Normalize a search query for cache key matching.
+
+    - Lowercase
+    - Strip whitespace
+    - Collapse multiple spaces
+    - Sort words alphabetically (so "iPhone 15 case" == "case 15 iPhone")
+    """
+    q = q.lower().strip()
+    q = re.sub(r"\s+", " ", q)
+    words = q.split()
+    words.sort()
+    return " ".join(words)
+
+
 class SearchCache:
     """Per-run cache for SerpAPI search results with hit limiting.
 
-    - Avoids retrying the exact same query+engine+limit combinations
+    - Avoids retrying the same query+engine+limit combinations
       within a single graph execution.
+    - Normalizes queries (lowercase, sorted words) for fuzzy key matching.
     - Tracks actual API calls (cache misses) and enforces a per-row limit
       to prevent burning through SerpAPI quota.
     - Cache is cleared between runs (or manually via ``clear()``).
@@ -110,14 +127,17 @@ class SearchCache:
 
     @staticmethod
     def _make_key(params: dict[str, Any]) -> tuple:
-        """Build a hashable cache key from SerpAPI params.
+        """Build a normalized, hashable cache key from SerpAPI params.
 
         Only includes the fields that affect the result: engine, q/search_query, num.
+        Query is normalized (lowercase, sorted words) for fuzzy matching.
         API key is excluded from the key.
         """
+        raw_q = params.get("q") or params.get("search_query", "")
+        normalized_q = _normalize_query(raw_q) if isinstance(raw_q, str) else raw_q
         return (
             params.get("engine", ""),
-            params.get("q") or params.get("search_query", ""),
+            normalized_q,
             params.get("num", 0),
         )
 

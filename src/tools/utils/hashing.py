@@ -1,6 +1,7 @@
 """Hashing utilities for image deduplication."""
 
 import os
+import time
 
 import imagehash
 from PIL import Image as PILImage
@@ -8,6 +9,10 @@ from PIL import Image as PILImage
 from src.config.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Default Hamming distance threshold for fuzzy matching.
+# Images within this distance are considered duplicates.
+HASH_SIMILARITY_THRESHOLD = 10
 
 
 def perceptual_hash(image_path: str) -> str | None:
@@ -25,7 +30,7 @@ def perceptual_hash(image_path: str) -> str | None:
         return None
 
 
-def are_similar(path1: str, path2: str, threshold: int = 10) -> bool:
+def are_similar(path1: str, path2: str, threshold: int = HASH_SIMILARITY_THRESHOLD) -> bool:
     """Check if two images are perceptually similar.
 
     Args:
@@ -38,3 +43,52 @@ def are_similar(path1: str, path2: str, threshold: int = 10) -> bool:
     if h1 is None or h2 is None:
         return False
     return imagehash.hex_to_hash(h1) - imagehash.hex_to_hash(h2) <= threshold
+
+
+def are_hashes_similar(
+    hash1: str, hash2: str, threshold: int = HASH_SIMILARITY_THRESHOLD
+) -> bool:
+    """Check if two pHash strings are within Hamming distance threshold."""
+    if not hash1 or not hash2:
+        return False
+    return imagehash.hex_to_hash(hash1) - imagehash.hex_to_hash(hash2) <= threshold
+
+
+class PHashCache:
+    """Cache for perceptual hashes to avoid recomputing for known images.
+
+    Maps image path -> (pHash, timestamp). Entries expire after TTL seconds.
+    """
+
+    def __init__(self, ttl: float = 3600.0) -> None:
+        self._cache: dict[str, tuple[str, float]] = {}
+        self._ttl = ttl
+
+    def get(self, path: str) -> str | None:
+        """Return cached pHash or None if not cached/expired."""
+        if path in self._cache:
+            h, ts = self._cache[path]
+            if time.monotonic() - ts < self._ttl:
+                return h
+            del self._cache[path]
+        return None
+
+    def put(self, path: str, phash: str) -> None:
+        """Store a pHash for the given path."""
+        self._cache[path] = (phash, time.monotonic())
+
+    def clear(self) -> None:
+        """Clear the cache."""
+        self._cache.clear()
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+
+# Module-level singleton
+_phash_cache = PHashCache()
+
+
+def get_phash_cache() -> PHashCache:
+    """Return the module-level pHash cache singleton."""
+    return _phash_cache

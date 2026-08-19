@@ -12,25 +12,35 @@ from src.config import DOWNLOAD_DIR, MAX_DOWNLOAD_SIZE
 from src.config.logging import get_logger
 from src.llm import get_vision_llm
 from src.tools.logging import log_tool_call
-from src.tools.utils.hashing import perceptual_hash
+from src.tools.utils.failed_urls import get_failed_url_tracker
+from src.tools.utils.hashing import (
+    HASH_SIMILARITY_THRESHOLD,
+    PHashCache,
+    are_hashes_similar,
+    get_phash_cache,
+    perceptual_hash,
+)
 from src.tools.utils.http import http_get
 
 logger = get_logger(__name__)
 
-# Module-level set of permanently failed image URLs (403, bot protection, etc.)
-_failed_image_urls: set[str] = set()
-
 
 def is_image_url_failed(url: str) -> bool:
     """Check if an image URL has permanently failed."""
-    return url in _failed_image_urls
+    return get_failed_url_tracker().is_failed(url)
+
+
+def get_failed_image_urls() -> set[str]:
+    """Return the shared failed image URLs set."""
+    return get_failed_url_tracker().get_all()
 
 
 @tool
 @log_tool_call
 def download_image(url: str, save_dir: str = DOWNLOAD_DIR, filename: str = "") -> str:
     """Download an image from a URL and return its local path."""
-    if url in _failed_image_urls:
+    tracker = get_failed_url_tracker()
+    if tracker.is_failed(url):
         logger.debug("Skipping previously failed image URL: %s", url)
         return ""
 
@@ -70,7 +80,7 @@ def download_image(url: str, save_dir: str = DOWNLOAD_DIR, filename: str = "") -
     except Exception as e:
         error_str = str(e).lower()
         if any(kw in error_str for kw in ("403", "forbidden", "bot", "captcha", "sign in")):
-            _failed_image_urls.add(url)
+            tracker.add(url)
             logger.warning("Permanently failed image URL (bot protection): %s", url)
         else:
             logger.error("Error downloading %s: %s", url, e)
@@ -132,16 +142,50 @@ def analyze_image(image_path: str) -> dict:
 
 @tool
 @log_tool_call
-def deduplicate_images(image_paths: list[str]) -> list[str]:
-    """Take a list of image paths and return paths of unique images based on pHash."""
-    unique_paths = []
-    seen_hashes: set = set()
+def deduplicate_images(
+    image_paths: list[str],
+    threshold: int = HASH_SIMILARITY_THRESHOLD,
+    cache: PHashCache | None = None,
+) -> list[str]:
+    """Take a list of image paths and return paths of unique images.
+
+    Uses fuzzy pHash matching with configurable Hamming distance threshold.
+    Images within the threshold are considered duplicates.
+
+    Args:
+        image_paths: List of image file paths to deduplicate.
+        threshold: Max Hamming distance to consider images similar (default: 10).
+        cache: Optional PHashCache to avoid recomputing hashes for known images.
+    """
+    if cache is None:
+        cache = get_phash_cache()
+
+    unique_paths: list[str] = []
+    seen_hashes: list[str] = []
+
     for path in image_paths:
         if not path or not os.path.exists(path):
             continue
 
-        h = perceptual_hash(path)
-        if h is not None and h not in seen_hashes:
-            seen_hashes.add(h)
+        # Check cache first
+        h = cache.get(path)
+        if h is None:
+            h = perceptual_hash(path)
+            if h is not None:
+                cache.put(path, h)
+
+        if h is None:
+            continue
+
+        # Check against all seen hashes with fuzzy threshold
+        is_dup = False
+        for seen_h in seen_hashes:
+            if are_hashes_similar(h, seen_h, threshold):
+                is_dup = True
+                break
+
+        if not is_dup:
+            seen_hashes.append(h)
             unique_paths.append(path)
+
     return unique_paths

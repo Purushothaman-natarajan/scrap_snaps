@@ -35,6 +35,7 @@ from src.tools.media.video import (
     score_video,
     select_best_frames,
 )
+from src.tools.utils.failed_urls import get_failed_url_tracker
 from src.tools.web import search_images, search_videos
 
 logger = get_logger(__name__)
@@ -110,7 +111,7 @@ class MediaAgent(BaseAgent):
         product = state.get("product", {})
         query = product.get("name", state.get("query", ""))
         focus = self._get_focus(state)
-        failed_media_urls = set(state.get("failed_media_urls", []))
+        tracker = get_failed_url_tracker()
         row_index = state.get("__row_index", 0)
 
         tasks = state.get("tasks", [])
@@ -130,13 +131,12 @@ class MediaAgent(BaseAgent):
 
         images_list = state.get("images", [])
         discovered_views = state.get("discovered_views", {})
-        new_failed_urls = list(failed_media_urls)
 
         if results:
             for res in results[:2]:
                 img_url = res.get("url")
 
-                if img_url in failed_media_urls:
+                if tracker.is_failed(img_url):
                     self.logger.debug("Skipping previously failed image URL: %s", img_url)
                     continue
 
@@ -150,8 +150,6 @@ class MediaAgent(BaseAgent):
                 })
 
                 if not local_path:
-                    if img_url not in new_failed_urls:
-                        new_failed_urls.append(img_url)
                     continue
 
                 existing_paths = [img["local_path"] for img in images_list]
@@ -182,11 +180,13 @@ class MediaAgent(BaseAgent):
                 else:
                     self.logger.info("Skipped duplicate image: %s", local_path)
 
+        # Sync failed URLs back to state for planner awareness
+        failed_urls = list(tracker.get_all())
         tasks = self.remove_tasks_by_type(tasks, "find_images")
         return {
             "images": images_list,
             "discovered_views": discovered_views,
-            "failed_media_urls": new_failed_urls,
+            "failed_media_urls": failed_urls,
             "tasks": tasks,
         }
 
@@ -203,7 +203,7 @@ class MediaAgent(BaseAgent):
         query = product.get("name", state.get("query", ""))
         missing_views = state.get("missing_views", REQUIRED_VIEWS.copy())
         focus = self._get_focus(state)
-        failed_media_urls = set(state.get("failed_media_urls", []))
+        tracker = get_failed_url_tracker()
         row_index = state.get("__row_index", 0)
 
         queries = build_queries(query, focus=focus, task_type="find_videos", limit=2)
@@ -230,12 +230,11 @@ class MediaAgent(BaseAgent):
         images_list = state.get("images", [])
         discovered_views = state.get("discovered_views", {})
         all_frame_paths = []
-        new_failed_urls = list(failed_media_urls)
 
         for video_info in selected_videos:
             url = video_info.get("url", "")
 
-            if url in failed_media_urls:
+            if tracker.is_failed(url):
                 self.logger.debug("Skipping previously failed video URL: %s", url)
                 continue
 
@@ -250,8 +249,6 @@ class MediaAgent(BaseAgent):
             })
             if not video_path:
                 self.logger.warning("Failed to download video: %s", url)
-                if url not in new_failed_urls:
-                    new_failed_urls.append(url)
                 continue
 
             video_name = os.path.basename(video_path).split(".")[0]
@@ -270,7 +267,8 @@ class MediaAgent(BaseAgent):
         if not all_frame_paths:
             self.logger.warning("No frames extracted from any video")
             tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
-            return {"failed_media_urls": new_failed_urls, "tasks": tasks}
+            failed_urls = list(tracker.get_all())
+            return {"failed_media_urls": failed_urls, "tasks": tasks}
 
         self.logger.info("Deduplicating %d frames", len(all_frame_paths))
         unique_paths = deduplicate_images.invoke({"image_paths": all_frame_paths})
@@ -322,19 +320,23 @@ class MediaAgent(BaseAgent):
             for view, frames in selected.items():
                 video_frames[view] = [f["path"] for f in frames if f.get("path")]
 
+            # Sync failed URLs back to state for planner awareness
+            failed_urls = list(tracker.get_all())
             tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
             return {
                 "images": images_list,
                 "discovered_views": discovered_views,
                 "video_frames": video_frames,
-                "failed_media_urls": new_failed_urls,
+                "failed_media_urls": failed_urls,
                 "tasks": tasks,
             }
 
+        # Sync failed URLs back to state for planner awareness
+        failed_urls = list(tracker.get_all())
         tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
         return {
             "images": images_list,
             "discovered_views": discovered_views,
-            "failed_media_urls": new_failed_urls,
+            "failed_media_urls": failed_urls,
             "tasks": tasks,
         }
