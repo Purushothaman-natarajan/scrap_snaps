@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import os
+import time
+from typing import Any
 
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
@@ -23,6 +25,29 @@ from src.tools.utils.hashing import (
 from src.tools.utils.http import http_get
 
 logger = get_logger(__name__)
+
+# Module-level cache for analyze_image results, keyed by pHash.
+# Avoids re-analyzing the same image in different cycles.
+_analyze_cache: dict[str, dict[str, Any]] = {}
+_analyze_cache_timestamps: dict[str, float] = {}
+_ANALYZE_CACHE_TTL = 3600.0  # 1 hour
+
+
+def _get_analyze_cache(phash: str) -> dict[str, Any] | None:
+    """Get cached analysis result by pHash, if not expired."""
+    if phash in _analyze_cache:
+        ts = _analyze_cache_timestamps.get(phash, 0)
+        if time.monotonic() - ts < _ANALYZE_CACHE_TTL:
+            return _analyze_cache[phash]
+        del _analyze_cache[phash]
+        _analyze_cache_timestamps.pop(phash, None)
+    return None
+
+
+def _put_analyze_cache(phash: str, result: dict[str, Any]) -> None:
+    """Store analysis result in cache."""
+    _analyze_cache[phash] = result
+    _analyze_cache_timestamps[phash] = time.monotonic()
 
 
 def is_image_url_failed(url: str) -> bool:
@@ -87,12 +112,35 @@ def download_image(url: str, save_dir: str = DOWNLOAD_DIR, filename: str = "") -
         return ""
 
 
+def _parse_analysis_text(text: str) -> dict[str, Any] | None:
+    """Parse LLM JSON text into an analysis dict. Returns None on failure."""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0].strip()
+    data = json.loads(text)
+    required_keys = {"product_match", "view", "confidence"}
+    if required_keys.issubset(data.keys()):
+        return data
+    return None
+
+
 @tool
 @log_tool_call
 def analyze_image(image_path: str) -> dict:
-    """Analyze an image using a vision model to determine the view type."""
+    """Analyze an image using a vision model to determine the view type.
+
+    Results are cached by pHash to avoid re-analyzing the same image.
+    """
     if not os.path.exists(image_path):
         return {"product_match": False, "view": "unknown", "confidence": 0.0}
+
+    phash = perceptual_hash(image_path)
+    if phash:
+        cached = _get_analyze_cache(phash)
+        if cached is not None:
+            logger.debug("analyze_image cache hit for %s", os.path.basename(image_path))
+            return cached
 
     try:
         llm = get_vision_llm()
@@ -117,19 +165,14 @@ def analyze_image(image_path: str) -> dict:
         )
 
         response = llm.invoke([message])
+        data = _parse_analysis_text(response.content.strip())
 
-        text = response.content.strip()
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0].strip()
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0].strip()
+        if data is None:
+            logger.warning("LLM response missing required keys for %s", image_path)
+            data = {"product_match": False, "view": "unknown", "confidence": 0.0}
 
-        data = json.loads(text)
-
-        required_keys = {"product_match", "view", "confidence"}
-        if not required_keys.issubset(data.keys()):
-            logger.warning("LLM response missing required keys: %s", data)
-            return {"product_match": False, "view": "unknown", "confidence": 0.0}
+        if phash:
+            _put_analyze_cache(phash, data)
 
         return data
     except json.JSONDecodeError as e:
@@ -138,6 +181,106 @@ def analyze_image(image_path: str) -> dict:
     except Exception as e:
         logger.error("Error analyzing image %s: %s", image_path, e)
         return {"product_match": False, "view": "unknown", "confidence": 0.0}
+
+
+@tool
+@log_tool_call
+def analyze_images_batch(image_paths: list[str]) -> list[dict]:
+    """Analyze multiple images in a single LLM call (cost-optimized).
+
+    Sends up to 5 images per call. Returns a list of analysis results
+    in the same order as the input paths. Images that fail to load
+    get a default "unknown" result.
+
+    This is 4-5x cheaper than calling analyze_image individually.
+    """
+    if not image_paths:
+        return []
+
+    batch = image_paths[:5]
+    results: list[dict | None] = [None] * len(batch)
+
+    uncached_indices: list[int] = []
+    uncached_paths: list[tuple[str, str | None]] = []
+
+    for i, path in enumerate(batch):
+        if not path or not os.path.exists(path):
+            results[i] = {"product_match": False, "view": "unknown", "confidence": 0.0}
+            continue
+
+        phash = perceptual_hash(path)
+        if phash:
+            cached = _get_analyze_cache(phash)
+            if cached is not None:
+                results[i] = cached
+                continue
+
+        uncached_indices.append(i)
+        uncached_paths.append((path, phash))
+
+    if not uncached_paths:
+        return [r for r in results]  # type: ignore
+
+    try:
+        llm = get_vision_llm()
+
+        content_parts: list[dict] = []
+        content_parts.append({
+            "type": "text",
+            "text": (
+                f"Analyze these {len(uncached_paths)} product images.\n"
+                "For each image, determine:\n"
+                "1. Is it a product image (not a person or generic scene)?\n"
+                "2. Primary view angle: front, back, left, right, top, bottom, detail, unknown\n"
+                "3. Confidence (0.0-1.0)\n\n"
+                "Reply in this JSON format:\n"
+                '{"results": [{"index": 0, "product_match": true/false, '
+                '"view": "one_of_options", "confidence": 0.0_to_1.0}, ...]}'
+            ),
+        })
+
+        for path, _ in uncached_paths:
+            with open(path, "rb") as f:
+                img_data = base64.b64encode(f.read()).decode("utf-8")
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{img_data}"},
+            })
+
+        message = HumanMessage(content=content_parts)
+        response = llm.invoke([message])
+
+        text = response.content.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0].strip()
+
+        parsed = json.loads(text)
+        batch_results = parsed.get("results", [])
+
+        for j, idx in enumerate(uncached_indices):
+            if j < len(batch_results):
+                result = batch_results[j]
+                required_keys = {"product_match", "view", "confidence"}
+                if required_keys.issubset(result.keys()):
+                    results[idx] = result
+                    _, phash = uncached_paths[j]
+                    if phash:
+                        _put_analyze_cache(phash, result)
+                else:
+                    results[idx] = {"product_match": False, "view": "unknown", "confidence": 0.0}
+            else:
+                results[idx] = {"product_match": False, "view": "unknown", "confidence": 0.0}
+
+        return [r for r in results]  # type: ignore
+
+    except Exception as e:
+        logger.error("Batch image analysis failed: %s", e)
+        for idx in uncached_indices:
+            if results[idx] is None:
+                results[idx] = {"product_match": False, "view": "unknown", "confidence": 0.0}
+        return [r for r in results]  # type: ignore
 
 
 @tool
@@ -167,7 +310,6 @@ def deduplicate_images(
         if not path or not os.path.exists(path):
             continue
 
-        # Check cache first
         h = cache.get(path)
         if h is None:
             h = perceptual_hash(path)
@@ -177,7 +319,6 @@ def deduplicate_images(
         if h is None:
             continue
 
-        # Check against all seen hashes with fuzzy threshold
         is_dup = False
         for seen_h in seen_hashes:
             if are_hashes_similar(h, seen_h, threshold):

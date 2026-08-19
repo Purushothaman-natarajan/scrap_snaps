@@ -3,9 +3,8 @@
 The planner generates research tasks (discover, find_images, find_videos, verify_spec)
 based on current state. It includes:
 
-- LLM-based task dedup: asks the LLM if new tasks are meaningfully different from
-  previous attempts. If not, returns "partial_complete" to terminate the loop.
-- Deterministic fingerprint fallback: if LLM dedup fails, compares task fingerprints.
+- Deterministic fingerprint dedup: if new tasks fingerprint matches a previous cycle,
+  returns "partial_complete" to terminate the loop.
 - Failed URL awareness: skips scheduling tasks that would retry known-failed URLs.
 - Focus-aware task selection: respects collect_specs, collect_media, and focus_areas.
 """
@@ -37,15 +36,6 @@ class PlannerOutput(BaseModel):
     """Structured output from the planner LLM call."""
 
     tasks: list[Task] = Field(description="The list of next tasks to execute")
-
-
-class DedupOutput(BaseModel):
-    """Structured output for task dedup check."""
-
-    is_different: bool = Field(
-        description="True if the new tasks are meaningfully different from previous attempts"
-    )
-    reason: str = Field(description="Brief explanation of why tasks are different or not")
 
 
 def _fingerprint_tasks(tasks: list[dict]) -> str:
@@ -158,7 +148,8 @@ class PlannerAgent(BaseAgent):
         - Missing Views: {state.get("missing_views", [])}
         - Images Collected: {len(state.get("images", []))}
         - Videos Processed: {len(state.get("videos", []))}
-        - Failed Tasks: {len(state.get("failed_tasks", []))}{focus_context}{collect_context}{failure_context}{dedup_context}
+        - Failed Tasks: {len(state.get("failed_tasks", []))}
+{focus_context}{collect_context}{failure_context}{dedup_context}
 
         Decide what tasks to execute next.
         If the product is not identified, output a 'discover' task.
@@ -172,23 +163,22 @@ class PlannerAgent(BaseAgent):
             result = llm.invoke(prompt)
             new_tasks = [t.model_dump() for t in result.tasks]
 
-            # LLM-based dedup check
-            if previous_fingerprints and new_tasks:
-                is_different = self._check_tasks_different(
-                    llm, new_tasks, previous_fingerprints, state
-                )
-                if not is_different:
-                    self.logger.warning(
-                        "Planner generated duplicate tasks, marking partial_complete"
-                    )
-                    return {
-                        "status": "partial_complete",
-                        "tasks": [],
-                        "iterations": iterations,
-                    }
-
             # Compute fingerprint for this cycle
             fp = _fingerprint_tasks(new_tasks)
+
+            # Fingerprint-only dedup: if same fingerprint seen >= 2x, stop
+            occurrence = previous_fingerprints.count(fp)
+            if occurrence >= 2:
+                self.logger.warning(
+                    "Planner produced identical tasks for %d cycles, marking partial_complete",
+                    occurrence,
+                )
+                return {
+                    "status": "partial_complete",
+                    "tasks": [],
+                    "iterations": iterations,
+                }
+
             updated_fingerprints = previous_fingerprints + [fp]
 
             self.logger.info("Planner generated %d tasks", len(new_tasks))
@@ -201,50 +191,19 @@ class PlannerAgent(BaseAgent):
             self.logger.warning("Planner LLM failed: %s", e)
             return self._fallback_tasks(state, iterations, focus)
 
-    def _check_tasks_different(
-        self,
-        llm,
-        new_tasks: list[dict],
-        previous_fingerprints: list[str],
-        state: dict,
-    ) -> bool:
-        """Use LLM to check if new tasks are meaningfully different from previous attempts."""
-        try:
-            dedup_llm = self.get_llm().with_structured_output(DedupOutput)
-
-            prompt = f"""
-            Are these new research tasks meaningfully different from previous failed attempts?
-
-            New tasks: {json.dumps(new_tasks, indent=2)}
-
-            Previous task fingerprints (last 3): {previous_fingerprints[-3:]}
-
-            Failed media URLs (DO NOT retry these): {state.get("failed_media_urls", [])[:10]}
-
-            Consider:
-            - Are the task types different? (e.g., find_images vs find_videos)
-            - Are the targets different? (e.g., 'front' vs 'side')
-            - Would these tasks likely hit the same failed URLs?
-
-            Reply with is_different=true if tasks are meaningfully different.
-            Reply with is_different=false if tasks would likely repeat failed attempts.
-            """
-            result = dedup_llm.invoke(prompt)
-            return result.is_different
-        except Exception as e:
-            self.logger.warning("Dedup check failed, using fingerprint comparison: %s", e)
-            # Fallback: deterministic fingerprint comparison
-            fp = _fingerprint_tasks(new_tasks)
-            return fp not in previous_fingerprints
-
-    def _fallback_tasks(self, state: dict, iterations: int, focus: FocusConfig | None = None) -> dict:
+    def _fallback_tasks(
+        self, state: dict, iterations: int, focus: FocusConfig | None = None
+    ) -> dict:
         """Generate fallback tasks when LLM fails."""
+        def _task(ttype: str, target: str, priority: float = 0.9) -> list[dict]:
+            return [{"type": ttype, "target": target, "priority": priority}]
+
         collect_specs = self._can_collect_specs(state)
         collect_media = self._can_collect_media(state)
 
         if not state.get("product"):
             return {
-                "tasks": [{"type": "discover", "target": state.get("query", ""), "priority": 1.0}],
+                "tasks": _task("discover", state.get("query", ""), 1.0),
                 "iterations": iterations,
             }
 
@@ -252,17 +211,17 @@ class PlannerAgent(BaseAgent):
         if not collect_specs:
             if collect_media == "images" and state.get("missing_views"):
                 return {
-                    "tasks": [{"type": "find_images", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
             elif collect_media == "videos" and state.get("missing_views"):
                 return {
-                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "tasks": _task("find_videos", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
             elif collect_media == "both" and state.get("missing_views"):
                 return {
-                    "tasks": [{"type": "find_images", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
             return {"tasks": [], "iterations": iterations}
@@ -271,7 +230,7 @@ class PlannerAgent(BaseAgent):
         if collect_media is None:
             if len(state.get("specifications", {})) < 5:
                 return {
-                    "tasks": [{"type": "verify_spec", "target": "general", "priority": 0.9}],
+                    "tasks": _task("verify_spec", "general"),
                     "iterations": iterations,
                 }
             return {"tasks": [], "iterations": iterations}
@@ -290,7 +249,7 @@ class PlannerAgent(BaseAgent):
                     self.logger.warning("All video URLs failed, cannot collect videos")
                     return {"tasks": [], "iterations": iterations}
                 return {
-                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "tasks": _task("find_videos", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
 
@@ -298,24 +257,24 @@ class PlannerAgent(BaseAgent):
             if has_youtube_focus and collect_media == "both" and images_count < 5:
                 if not failed_media_urls:
                     return {
-                        "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.9}],
+                        "tasks": _task("find_videos", state.get("missing_views")[0]),
                         "iterations": iterations,
                     }
 
             if images_count < 3:
                 return {
-                    "tasks": [{"type": "find_images", "target": state.get("missing_views")[0], "priority": 0.9}],
+                    "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
             elif collect_media == "both" and not failed_media_urls:
                 return {
-                    "tasks": [{"type": "find_videos", "target": state.get("missing_views")[0], "priority": 0.8}],
+                    "tasks": _task("find_videos", state.get("missing_views")[0], 0.8),
                     "iterations": iterations,
                 }
 
         if has_specs_focus and len(state.get("specifications", {})) < 3:
             return {
-                "tasks": [{"type": "verify_spec", "target": "general", "priority": 0.9}],
+                "tasks": _task("verify_spec", "general"),
                 "iterations": iterations,
             }
 

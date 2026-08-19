@@ -188,7 +188,7 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
             extracted_hashes.add(h_str)
 
             frame_path = os.path.join(output_dir, f"frame_{frame_num:06d}.jpg")
-            cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             return frame_path
 
         logger.info("Found %d scenes, extracting frames", len(scenes))

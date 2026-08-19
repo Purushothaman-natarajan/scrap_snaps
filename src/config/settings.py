@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=10)
 
     # === Execution ===
-    max_iterations: int = Field(default=30)
+    max_iterations: int = Field(default=15)
     recursion_limit: int = Field(default=200)
     required_views: str = Field(default="front,back,side,top")
 
@@ -72,8 +72,8 @@ class Settings(BaseSettings):
     max_video_results: int = Field(default=2)
     video_min_duration: int = Field(default=180)
     video_max_duration: int = Field(default=900)
-    video_frame_interval: float = Field(default=2.0)
-    video_max_resolution: int = Field(default=720)
+    video_frame_interval: float = Field(default=5.0)
+    video_max_resolution: int = Field(default=480)
     crop_video_frames: bool = Field(default=False)
     ai_frame_selection: bool = Field(default=True)
 

@@ -107,12 +107,23 @@ class Video(Base):
     product = relationship("Product", back_populates="videos")
 
 
+def get_engine(database_url: str):
+    """Get or create a shared engine for the given database URL."""
+    engine = create_engine(database_url, echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def get_session(engine) -> Session:
+    """Create a new session from an existing engine."""
+    session_factory = sessionmaker(bind=engine)
+    return session_factory()
+
+
 def init_db(database_url: str) -> Session:
     """Initialize the database and return a session.
 
     Creates all tables if they don't exist.
     """
-    engine = create_engine(database_url, echo=False)
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
+    engine = get_engine(database_url)
+    return get_session(engine)

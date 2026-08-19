@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.io import read_excel_rows, write_row_result, get_storage
-from src.io.naming import make_image_path, make_video_path
-from src.pipeline.checkpoint import CheckpointManager, CheckpointData
+from src.io import get_storage, read_excel_rows, write_row_result
+from src.pipeline.checkpoint import CheckpointData, CheckpointManager
 from src.pipeline.results import extract_result_for_row
 
 logger = logging.getLogger(__name__)
@@ -92,6 +90,11 @@ class PipelineRunner:
             "skipped": 0,
         }
 
+        # Create shared DB engine once for all rows
+        from src.config import DATABASE_URL
+        from src.db import get_engine
+        db_engine = get_engine(DATABASE_URL)
+
         for batch in read_excel_rows(
             config.input_file,
             sheet=config.sheet,
@@ -106,13 +109,13 @@ class PipelineRunner:
                     continue
 
                 try:
-                    result = self._process_row(row_data, config)
+                    result = self._process_row(row_data, config, db_engine=db_engine)
                     write_row_result(config.output_file, result)
 
                     # Save to database
                     try:
-                        from src.db.utils import save_result_to_db
                         from src.config import DATABASE_URL
+                        from src.db.utils import save_result_to_db
                         save_result_to_db(result, DATABASE_URL)
                     except Exception as db_err:
                         logger.warning("Failed to save to DB for row %d: %s", row_idx, db_err)
@@ -150,11 +153,11 @@ class PipelineRunner:
         )
         return summary
 
-    def _process_row(self, row_data: dict, config: PipelineConfig) -> dict:
+    def _process_row(self, row_data: dict, config: PipelineConfig, db_engine=None) -> dict:
         """Process a single row through the research graph."""
+        from src.config import DATABASE_URL, RECURSION_LIMIT, REQUIRED_VIEWS
+        from src.db import get_engine
         from src.graph import build_graph
-        from src.db import init_db
-        from src.config import DATABASE_URL, REQUIRED_VIEWS, MAX_ITERATIONS, RECURSION_LIMIT
         from src.search.focus import get_focus_config
 
         query = self._extract_query(row_data)
@@ -168,7 +171,8 @@ class PipelineRunner:
 
         focus = get_focus_config(config.focus_areas)
 
-        session = init_db(DATABASE_URL)
+        if db_engine is None:
+            db_engine = get_engine(DATABASE_URL)
         graph = build_graph()
 
         initial_state = {
@@ -205,8 +209,6 @@ class PipelineRunner:
         for event in graph.stream(initial_state, {"recursion_limit": RECURSION_LIMIT}):
             for key, value in event.items():
                 final_state = value
-
-        session.close()
 
         if final_state is None:
             return {

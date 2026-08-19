@@ -25,10 +25,13 @@ from src.config import (
     VIDEO_DOWNLOAD_DIR,
 )
 from src.config.logging import get_logger
-from src.io.naming import make_image_path, make_video_path
 from src.search.focus import FocusConfig
 from src.search.query_builder import build_queries
-from src.tools.media.images import analyze_image, deduplicate_images, download_image
+from src.tools.media.images import (
+    analyze_images_batch,
+    deduplicate_images,
+    download_image,
+)
 from src.tools.media.video import (
     download_video,
     extract_frames,
@@ -133,6 +136,9 @@ class MediaAgent(BaseAgent):
         discovered_views = state.get("discovered_views", {})
 
         if results:
+            # Phase 1: Download and collect all candidate paths
+            new_paths = []
+            new_urls = []
             for res in results[:2]:
                 img_url = res.get("url")
 
@@ -140,45 +146,59 @@ class MediaAgent(BaseAgent):
                     self.logger.debug("Skipping previously failed image URL: %s", img_url)
                     continue
 
-                # Build standardized filename using naming convention
                 view_hint = target_view or "unknown"
-                img_filename = f"row_{row_index}_{_slugify_query(query)}_{view_hint}_{_short_hash(img_url)}.jpg"
+                img_filename = (
+                    f"row_{row_index}_{_slugify_query(query)}_{view_hint}"
+                    f"_{_short_hash(img_url)}.jpg"
+                )
                 local_path = download_image.invoke({
                     "url": img_url,
                     "save_dir": DOWNLOAD_DIR,
                     "filename": img_filename,
                 })
 
-                if not local_path:
-                    continue
+                if local_path:
+                    new_paths.append(local_path)
+                    new_urls.append(img_url)
 
+            if new_paths:
+                # Phase 2: Deduplicate against existing images
                 existing_paths = [img["local_path"] for img in images_list]
-                existing_paths.append(local_path)
+                all_paths = existing_paths + new_paths
+                unique_paths = deduplicate_images.invoke({"image_paths": all_paths})
+                unique_set = set(unique_paths)
 
-                unique_paths = deduplicate_images.invoke({"image_paths": existing_paths})
+                # Phase 3: Collect only truly new unique images for batch analysis
+                paths_to_analyze = []
+                urls_for_paths = []
+                for path, url in zip(new_paths, new_urls):
+                    if path in unique_set and path not in existing_paths:
+                        paths_to_analyze.append(path)
+                        urls_for_paths.append(url)
+                    elif path not in unique_set:
+                        self.logger.info("Skipped duplicate image: %s", path)
 
-                if local_path in unique_paths:
-                    analysis = analyze_image.invoke({"image_path": local_path})
+                # Phase 4: Batch analyze all new unique images (1 LLM call)
+                if paths_to_analyze:
+                    self.logger.info("Batch analyzing %d new images", len(paths_to_analyze))
+                    analyses = analyze_images_batch.invoke({"image_paths": paths_to_analyze})
 
-                    view_type = analysis.get("view", "unknown")
-                    confidence = analysis.get("confidence", 0.0)
-                    product_match = analysis.get("product_match", False)
+                    for path, url, analysis in zip(paths_to_analyze, urls_for_paths, analyses):
+                        view_type = analysis.get("view", "unknown")
+                        confidence = analysis.get("confidence", 0.0)
+                        product_match = analysis.get("product_match", False)
 
-                    if product_match:
-                        images_list.append(
-                            {
-                                "url": img_url,
-                                "local_path": local_path,
+                        if product_match:
+                            images_list.append({
+                                "url": url,
+                                "local_path": path,
                                 "view": view_type,
                                 "confidence": confidence,
-                            }
-                        )
+                            })
 
-                        if view_type not in discovered_views:
-                            discovered_views[view_type] = []
-                        discovered_views[view_type].append(local_path)
-                else:
-                    self.logger.info("Skipped duplicate image: %s", local_path)
+                            if view_type not in discovered_views:
+                                discovered_views[view_type] = []
+                            discovered_views[view_type].append(path)
 
         # Sync failed URLs back to state for planner awareness
         failed_urls = list(tracker.get_all())
@@ -286,9 +306,11 @@ class MediaAgent(BaseAgent):
             unique_paths = cropped_paths
 
         self.logger.info("Classifying view types for %d frames", len(unique_paths))
-        for frame_path in unique_paths:
-            analysis = analyze_image.invoke({"image_path": frame_path})
 
+        # Batch analyze all frames (1 LLM call instead of N)
+        analyses = analyze_images_batch.invoke({"image_paths": unique_paths})
+
+        for frame_path, analysis in zip(unique_paths, analyses):
             if analysis.get("product_match", False):
                 view_type = analysis.get("view", "unknown")
                 confidence = analysis.get("confidence", 0.0)
