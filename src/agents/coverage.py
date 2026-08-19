@@ -2,8 +2,12 @@
 
 The coverage agent evaluates gap analysis and routes the graph. It includes:
 
-- No-progress detection: snapshots image/spec/view counts and compares against
-  previous check. If nothing changed, marks status as "partial_complete".
+- Hard cycle limit: forces termination after MAX_COVERAGE_CYCLES coverage checks
+  to prevent infinite loops even when new data trickles in.
+- Threshold-based no-progress: considers "no progress" if total new items added
+  since last check is <= NO_PROGRESS_THRESHOLD (default 1).
+- Iterations proximity check: forces termination when iterations approaches
+  max_iterations (80% threshold).
 - YouTube failure handling: if all video URLs failed (bot detection), does not
   force video extraction — continues with images/specs only.
 - Focus-aware evaluation: respects collect_specs, collect_media, and focus areas.
@@ -16,6 +20,10 @@ from src.config.logging import get_logger
 from src.search.focus import FocusArea, FocusConfig
 
 logger = get_logger(__name__)
+
+MAX_COVERAGE_CYCLES = 10
+NO_PROGRESS_THRESHOLD = 1
+ITERATIONS_PROXIMITY_RATIO = 0.8
 
 
 class CoverageAgent(BaseAgent):
@@ -36,10 +44,12 @@ class CoverageAgent(BaseAgent):
         return state.get("collect_media", "both")
 
     def _is_no_progress(self, state: dict) -> bool:
-        """Check if no new data was collected since last coverage check.
+        """Check if no meaningful new data was collected since last coverage check.
 
-        Compares current counts against a snapshot stored in state.
-        Returns True if images, specs, and views are all unchanged.
+        Uses a threshold: considers "no progress" if the total number of new items
+        (images + specs + views) added since the last check is <= NO_PROGRESS_THRESHOLD.
+        This is more robust than exact equality, which can miss cases where 1 item
+        trickles in each cycle.
         """
         current_images = len(state.get("images", []))
         current_specs = len(state.get("specifications", {}))
@@ -49,14 +59,14 @@ class CoverageAgent(BaseAgent):
         prev_specs = state.get("_prev_specs_count", 0)
         prev_views = state.get("_prev_views_count", 0)
 
-        if (
-            current_images == prev_images
-            and current_specs == prev_specs
-            and current_views == prev_views
-            and current_images + current_specs + current_views > 0
-        ):
-            return True
-        return False
+        total_current = current_images + current_specs + current_views
+        total_prev = prev_images + prev_specs + prev_views
+
+        if total_current == 0:
+            return False
+
+        new_items = total_current - total_prev
+        return new_items <= NO_PROGRESS_THRESHOLD
 
     def _snapshot_progress(self, state: dict) -> dict:
         """Return state updates to snapshot current progress."""
@@ -83,9 +93,23 @@ class CoverageAgent(BaseAgent):
         images_count = len(state.get("images", []))
         videos_count = len(state.get("videos", []))
 
-        # Check for no-progress (same counts as last check)
-        no_progress = self._is_no_progress(state)
+        # Increment coverage cycle counter
+        coverage_cycles = state.get("_coverage_cycles", 0) + 1
         updates = self._snapshot_progress(state)
+        updates["_coverage_cycles"] = coverage_cycles
+
+        # Hard cycle limit - force termination
+        if coverage_cycles >= MAX_COVERAGE_CYCLES:
+            self.logger.warning(
+                "Coverage hard limit reached (%d cycles). Forcing termination.",
+                coverage_cycles,
+            )
+            updates["status"] = "partial_complete"
+            updates["missing_views"] = missing_views
+            return updates
+
+        # Check for no-progress (threshold-based)
+        no_progress = self._is_no_progress(state)
 
         if no_progress:
             self.logger.warning(
@@ -180,12 +204,14 @@ class CoverageAgent(BaseAgent):
             status = "complete" if not missing_views else "incomplete"
 
         self.logger.info(
-            "Coverage: %d/%d views found, %d specs, %d images, %d videos",
+            "Coverage: %d/%d views found, %d specs, %d images, %d videos (cycle %d/%d)",
             len(required_views) - len(missing_views),
             len(required_views),
             len(specs),
             images_count,
             videos_count,
+            coverage_cycles,
+            MAX_COVERAGE_CYCLES,
         )
 
         updates["missing_views"] = missing_views
@@ -198,5 +224,15 @@ class CoverageAgent(BaseAgent):
         if status in ("max_iterations_reached", "partial_complete"):
             return "complete"
         if status == "incomplete":
+            # Safety check: force complete if iterations is near max
+            iterations = state.get("iterations", 0)
+            max_iterations = state.get("max_iterations", 30)
+            if iterations >= max_iterations * ITERATIONS_PROXIMITY_RATIO:
+                self.logger.warning(
+                    "Iterations proximity check: %d/%d. Forcing complete.",
+                    iterations,
+                    max_iterations,
+                )
+                return "complete"
             return "more_research"
         return "complete"

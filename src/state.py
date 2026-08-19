@@ -49,6 +49,12 @@ class ResearchState(TypedDict):
     failed_media_urls: list[str]
     previous_task_fingerprints: list[str]
 
+    # Coverage cycle counter - forces termination after N cycles
+    _coverage_cycles: int
+    _prev_images_count: int
+    _prev_specs_count: int
+    _prev_views_count: int
+
     # Cost / safety
     iterations: int
     max_iterations: int

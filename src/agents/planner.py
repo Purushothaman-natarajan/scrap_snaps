@@ -87,7 +87,24 @@ class PlannerAgent(BaseAgent):
 
         tasks = state.get("tasks", [])
         if tasks:
-            return {"tasks": tasks, "iterations": iterations}
+            # Fingerprint existing tasks and check for circulating duplicates
+            fp = _fingerprint_tasks(tasks)
+            previous_fingerprints = state.get("previous_task_fingerprints", [])
+            fp_count = previous_fingerprints.count(fp)
+            if fp_count >= 2:
+                self.logger.warning(
+                    "Same tasks fingerprint seen %d times, marking partial_complete", fp_count
+                )
+                return {
+                    "status": "partial_complete",
+                    "tasks": [],
+                    "iterations": iterations,
+                }
+            return {
+                "tasks": tasks,
+                "previous_task_fingerprints": previous_fingerprints + [fp],
+                "iterations": iterations,
+            }
 
         llm = self.get_llm().with_structured_output(PlannerOutput)
         focus = self._get_focus(state)

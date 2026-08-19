@@ -58,6 +58,13 @@ def run_research(
     session = init_db(DATABASE_URL)
     logger.info("Database initialized at %s", DATABASE_URL)
 
+    # Ensure recursion_limit is always sufficient for max_iterations.
+    # Each cycle = planner + execute + verify + coverage = 4 nodes min.
+    safe_recursion_limit = max(RECURSION_LIMIT, MAX_ITERATIONS * 8)
+    logger.info(
+        "Recursion limit: %d (max_iterations=%d)", safe_recursion_limit, MAX_ITERATIONS
+    )
+
     graph = build_graph()
 
     initial_state = {
@@ -85,13 +92,17 @@ def run_research(
         "previous_task_fingerprints": [],
         "iterations": 0,
         "max_iterations": MAX_ITERATIONS,
+        "_coverage_cycles": 0,
+        "_prev_images_count": 0,
+        "_prev_specs_count": 0,
+        "_prev_views_count": 0,
         "confidence": 0.0,
         "status": "started",
     }
 
     logger.info("--- Execution Trace ---")
     final_state = None
-    for event in graph.stream(initial_state, {"recursion_limit": RECURSION_LIMIT}):
+    for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
         for key, value in event.items():
             logger.info("Finished Node: %s", key)
             final_state = value
