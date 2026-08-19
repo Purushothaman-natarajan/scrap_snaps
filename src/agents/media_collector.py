@@ -18,6 +18,7 @@ import os
 from src.agents.base import BaseAgent
 from src.config import (
     AI_FRAME_SELECTION,
+    CROP_VIDEO_FRAMES,
     DOWNLOAD_DIR,
     MAX_IMAGE_RESULTS,
     REQUIRED_VIEWS,
@@ -54,6 +55,35 @@ def _short_hash(text: str, length: int = 6) -> str:
     """Generate a short hash from text."""
     import hashlib
     return hashlib.md5(text.encode()).hexdigest()[:length]
+
+
+def _crop_center(image_path: str, crop_ratio: float = 0.7) -> str | None:
+    """Crop the center region of an image to focus on the product.
+
+    Crops to the central ``crop_ratio`` of both width and height.
+    Returns the cropped image path, or None on failure.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(image_path)
+        w, h = img.size
+
+        new_w = int(w * crop_ratio)
+        new_h = int(h * crop_ratio)
+        left = (w - new_w) // 2
+        top = (h - new_h) // 2
+        right = left + new_w
+        bottom = top + new_h
+
+        cropped = img.crop((left, top, right, bottom))
+
+        crop_path = image_path.replace(".jpg", "_crop.jpg").replace(".png", "_crop.png")
+        cropped.save(crop_path, quality=95)
+        return crop_path
+    except Exception as e:
+        logger.warning("Failed to crop image %s: %s", image_path, e)
+        return None
 
 
 class MediaAgent(BaseAgent):
@@ -245,6 +275,17 @@ class MediaAgent(BaseAgent):
         self.logger.info("Deduplicating %d frames", len(all_frame_paths))
         unique_paths = deduplicate_images.invoke({"image_paths": all_frame_paths})
         self.logger.info("Kept %d unique frames after dedup", len(unique_paths))
+
+        if CROP_VIDEO_FRAMES and unique_paths:
+            self.logger.info("Cropping %d video frames to center region", len(unique_paths))
+            cropped_paths = []
+            for fp in unique_paths:
+                cropped = _crop_center(fp)
+                if cropped:
+                    cropped_paths.append(cropped)
+                else:
+                    cropped_paths.append(fp)
+            unique_paths = cropped_paths
 
         self.logger.info("Classifying view types for %d frames", len(unique_paths))
         for frame_path in unique_paths:

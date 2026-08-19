@@ -41,6 +41,7 @@ VIDEO_MAX_DURATION = settings.video_max_duration
 VIDEO_FRAME_INTERVAL = settings.video_frame_interval
 VIDEO_MAX_RESOLUTION = settings.video_max_resolution
 AI_FRAME_SELECTION = settings.ai_frame_selection
+CROP_VIDEO_FRAMES = settings.crop_video_frames
 
 VERIFICATION_WEIGHTS = settings.weights
 
@@ -81,6 +82,7 @@ __all__ = [
     "VIDEO_FRAME_INTERVAL",
     "VIDEO_MAX_RESOLUTION",
     "AI_FRAME_SELECTION",
+    "CROP_VIDEO_FRAMES",
     "VERIFICATION_WEIGHTS",
     "SEARCH_CACHE_SIZE",
     "SERPAPI_MAX_HITS_PER_ROW",

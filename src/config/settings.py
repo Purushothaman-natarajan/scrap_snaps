@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     video_max_duration: int = Field(default=900)
     video_frame_interval: float = Field(default=2.0)
     video_max_resolution: int = Field(default=720)
+    crop_video_frames: bool = Field(default=False)
     ai_frame_selection: bool = Field(default=True)
 
     # === Verification Scoring ===
