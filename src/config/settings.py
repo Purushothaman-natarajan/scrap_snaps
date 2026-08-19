@@ -91,6 +91,7 @@ class Settings(BaseSettings):
 
     # === Search Cache ===
     search_cache_size: int = Field(default=500)
+    serpapi_max_hits_per_row: int = Field(default=20)
 
     @property
     def required_views_list(self) -> list[str]:

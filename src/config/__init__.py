@@ -45,6 +45,7 @@ AI_FRAME_SELECTION = settings.ai_frame_selection
 VERIFICATION_WEIGHTS = settings.weights
 
 SEARCH_CACHE_SIZE = settings.search_cache_size
+SERPAPI_MAX_HITS_PER_ROW = settings.serpapi_max_hits_per_row
 
 validate_env = settings.validate_required
 
@@ -82,5 +83,6 @@ __all__ = [
     "AI_FRAME_SELECTION",
     "VERIFICATION_WEIGHTS",
     "SEARCH_CACHE_SIZE",
+    "SERPAPI_MAX_HITS_PER_ROW",
     "validate_env",
 ]

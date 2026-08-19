@@ -1,7 +1,10 @@
 """Main entry point for the product research agent."""
 
 import argparse
+import json
 import logging
+import os
+import re
 
 from src.config import (
     COLLECT_MEDIA,
@@ -16,8 +19,17 @@ from src.config import (
 from src.db import init_db
 from src.graph import build_graph
 from src.search.focus import get_focus_config
+from src.tools.web.cache import get_search_cache
 
 logger = logging.getLogger(__name__)
+
+
+def _slugify(text: str, max_len: int = 50) -> str:
+    """Convert text to a filesystem-safe slug."""
+    text = text.lower().strip()
+    text = re.sub(r"[^\w\s-]", "", text)
+    text = re.sub(r"[\s_]+", "_", text)
+    return text[:max_len].rstrip("_")
 
 
 def run_research(
@@ -25,9 +37,14 @@ def run_research(
     focus_areas: str | None = None,
     collect_specs: bool | None = None,
     collect_media: str | None = None,
+    output_path: str | None = None,
 ):
     """Execute a research run for the given product query."""
     logger.info("Starting research for: %s", query)
+
+    # Clear search cache for this run
+    cache = get_search_cache()
+    cache.clear()
 
     focus_raw = focus_areas or FOCUS_AREAS
     focus = get_focus_config(focus_raw)
@@ -81,7 +98,17 @@ def run_research(
 
     logger.info("--- Research Complete ---")
 
+    # Log search cache stats
+    cache_stats = cache.stats
+    logger.info(
+        "Search cache stats: %d API calls, %d cache hits, %d cache misses",
+        cache_stats["api_calls"],
+        cache_stats["hits"],
+        cache_stats["misses"],
+    )
+
     if final_state:
+        # Save to database
         try:
             from src.db.utils import save_result_to_db
             from src.pipeline.results import extract_result
@@ -89,6 +116,25 @@ def run_research(
             save_result_to_db(result, DATABASE_URL)
         except Exception as e:
             logger.warning("Failed to save result to DB: %s", e)
+
+        # Save to JSON file
+        try:
+            from src.pipeline.results import extract_result
+            result = extract_result(final_state)
+            result["search_cache_stats"] = cache_stats
+            result["run_query"] = query
+
+            if not output_path:
+                slug = _slugify(query)
+                output_dir = "results"
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, f"{slug}.json")
+
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2, default=str)
+            logger.info("Results saved to %s", output_path)
+        except Exception as e:
+            logger.warning("Failed to save result to JSON: %s", e)
 
     session.close()
 
@@ -126,6 +172,11 @@ def main():
         default=None,
         help="What media to collect: images, videos, both (default), or none",
     )
+    parser.add_argument(
+        "--output", "-o",
+        default=None,
+        help="Output JSON file path (default: results/<query>.json)",
+    )
 
     args = parser.parse_args()
 
@@ -140,6 +191,7 @@ def main():
         focus_areas=args.focus,
         collect_specs=args.collect_specs,
         collect_media=args.collect_media,
+        output_path=args.output,
     )
 
 

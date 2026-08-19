@@ -21,6 +21,9 @@ def _serpapi_search(params: dict[str, Any]) -> dict[str, Any]:
     Results are cached per-run to avoid retrying the exact same query
     within a single graph execution.  Cache is cleared between runs.
 
+    Enforces a per-row API call limit (SERPAPI_MAX_HITS_PER_ROW) to
+    prevent burning through SerpAPI quota on repeated queries.
+
     Important:
         Different SerpAPI engines return different result fields:
         - google         -> organic_results
@@ -28,9 +31,20 @@ def _serpapi_search(params: dict[str, Any]) -> dict[str, Any]:
         - youtube        -> video_results
     """
     cache = get_search_cache()
+
+    # Check cache first
     cached = cache.get(params)
     if cached is not None:
         return cached
+
+    # Check per-row API call limit before making network call
+    if not cache.can_call_api():
+        logger.warning(
+            "SerpAPI call skipped (per-row limit reached): engine=%s, query=%s",
+            params.get("engine", ""),
+            params.get("q") or params.get("search_query", ""),
+        )
+        return {"error": "SerpAPI per-row hit limit reached", "organic_results": []}
 
     api_key = settings.serpapi_key
 
@@ -44,6 +58,9 @@ def _serpapi_search(params: dict[str, Any]) -> dict[str, Any]:
         **params,
         "api_key": api_key,
     }
+
+    # Record the API call BEFORE making it (counts even if it fails)
+    cache.record_api_call()
 
     try:
         response = GoogleSearch(request_params).get_dict()
