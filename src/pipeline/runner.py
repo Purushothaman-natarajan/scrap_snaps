@@ -108,6 +108,15 @@ class PipelineRunner:
                 try:
                     result = self._process_row(row_data, config)
                     write_row_result(config.output_file, result)
+
+                    # Save to database
+                    try:
+                        from src.db.utils import save_result_to_db
+                        from src.config import DATABASE_URL
+                        save_result_to_db(result, DATABASE_URL)
+                    except Exception as db_err:
+                        logger.warning("Failed to save to DB for row %d: %s", row_idx, db_err)
+
                     self.checkpoint_mgr.mark_completed(checkpoint, row_idx)
                     summary["processed"] += 1
                     logger.info(
@@ -184,6 +193,8 @@ class PipelineRunner:
             "tasks": [],
             "completed_tasks": [],
             "failed_tasks": [],
+            "failed_media_urls": [],
+            "previous_task_fingerprints": [],
             "iterations": 0,
             "max_iterations": config.max_iterations,
             "confidence": 0.0,

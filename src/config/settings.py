@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # === Execution ===
     max_iterations: int = Field(default=30)
-    recursion_limit: int = Field(default=50)
+    recursion_limit: int = Field(default=200)
     required_views: str = Field(default="front,back,side,top")
 
     # === Focus ===
@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     log_timestamp: bool = Field(default=True)
     log_capture: bool = Field(default=True)
     log_file: str = Field(default="logs/scrap_snaps.log")
+
+    # === Search Cache ===
+    search_cache_size: int = Field(default=500)
 
     @property
     def required_views_list(self) -> list[str]:

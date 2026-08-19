@@ -45,6 +45,10 @@ class ResearchState(TypedDict):
     completed_tasks: list[str]
     failed_tasks: list[dict]
 
+    # Failure tracking - prevents infinite retry loops
+    failed_media_urls: list[str]
+    previous_task_fingerprints: list[str]
+
     # Cost / safety
     iterations: int
     max_iterations: int

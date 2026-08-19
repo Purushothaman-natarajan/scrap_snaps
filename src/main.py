@@ -64,6 +64,8 @@ def run_research(
         "tasks": [],
         "completed_tasks": [],
         "failed_tasks": [],
+        "failed_media_urls": [],
+        "previous_task_fingerprints": [],
         "iterations": 0,
         "max_iterations": MAX_ITERATIONS,
         "confidence": 0.0,
@@ -71,11 +73,23 @@ def run_research(
     }
 
     logger.info("--- Execution Trace ---")
+    final_state = None
     for event in graph.stream(initial_state, {"recursion_limit": RECURSION_LIMIT}):
         for key, value in event.items():
             logger.info("Finished Node: %s", key)
+            final_state = value
 
     logger.info("--- Research Complete ---")
+
+    if final_state:
+        try:
+            from src.db.utils import save_result_to_db
+            from src.pipeline.results import extract_result
+            result = extract_result(final_state)
+            save_result_to_db(result, DATABASE_URL)
+        except Exception as e:
+            logger.warning("Failed to save result to DB: %s", e)
+
     session.close()
 
 

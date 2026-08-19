@@ -44,6 +44,8 @@ AI_FRAME_SELECTION = settings.ai_frame_selection
 
 VERIFICATION_WEIGHTS = settings.weights
 
+SEARCH_CACHE_SIZE = settings.search_cache_size
+
 validate_env = settings.validate_required
 
 __all__ = [
@@ -79,5 +81,6 @@ __all__ = [
     "VIDEO_MAX_RESOLUTION",
     "AI_FRAME_SELECTION",
     "VERIFICATION_WEIGHTS",
+    "SEARCH_CACHE_SIZE",
     "validate_env",
 ]

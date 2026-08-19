@@ -17,19 +17,33 @@ from src.tools.utils.http import http_get
 
 logger = get_logger(__name__)
 
+# Module-level set of permanently failed image URLs (403, bot protection, etc.)
+_failed_image_urls: set[str] = set()
+
+
+def is_image_url_failed(url: str) -> bool:
+    """Check if an image URL has permanently failed."""
+    return url in _failed_image_urls
+
 
 @tool
 @log_tool_call
-def download_image(url: str, save_dir: str = DOWNLOAD_DIR) -> str:
+def download_image(url: str, save_dir: str = DOWNLOAD_DIR, filename: str = "") -> str:
     """Download an image from a URL and return its local path."""
+    if url in _failed_image_urls:
+        logger.debug("Skipping previously failed image URL: %s", url)
+        return ""
+
     os.makedirs(save_dir, exist_ok=True)
 
-    filename = url.split("/")[-1].split("?")[0]
-    if not filename or "." not in filename:
-        ext = ".jpg"
-        filename = f"image_{hashlib.md5(url.encode()).hexdigest()}{ext}"
-
-    local_path = os.path.join(save_dir, filename)
+    if filename:
+        local_path = os.path.join(save_dir, filename)
+    else:
+        filename_from_url = url.split("/")[-1].split("?")[0]
+        if not filename_from_url or "." not in filename_from_url:
+            ext = ".jpg"
+            filename_from_url = f"image_{hashlib.md5(url.encode()).hexdigest()}{ext}"
+        local_path = os.path.join(save_dir, filename_from_url)
 
     if os.path.exists(local_path):
         return local_path
@@ -54,7 +68,12 @@ def download_image(url: str, save_dir: str = DOWNLOAD_DIR) -> str:
             f.write(response.content)
         return local_path
     except Exception as e:
-        logger.error("Error downloading %s: %s", url, e)
+        error_str = str(e).lower()
+        if any(kw in error_str for kw in ("403", "forbidden", "bot", "captcha", "sign in")):
+            _failed_image_urls.add(url)
+            logger.warning("Permanently failed image URL (bot protection): %s", url)
+        else:
+            logger.error("Error downloading %s: %s", url, e)
         return ""
 
 

@@ -19,6 +19,14 @@ from src.tools.logging import log_tool_call
 
 logger = get_logger(__name__)
 
+# Module-level set of permanently failed video URLs (bot detection, etc.)
+_failed_video_urls: set[str] = set()
+
+
+def is_video_url_failed(url: str) -> bool:
+    """Check if a video URL has permanently failed."""
+    return url in _failed_video_urls
+
 
 def score_video(video: dict) -> float:
     """Score a video for quality/relevance. Higher is better."""
@@ -66,18 +74,27 @@ def _parse_duration(duration) -> int:
 
 @tool
 @log_tool_call
-def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR) -> str:
+def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str = "") -> str:
     """Download a YouTube video using yt-dlp.
 
     Downloads at capped resolution (default 720p) to save bandwidth.
     Returns the local file path, or empty string on failure.
     """
+    if url in _failed_video_urls:
+        logger.debug("Skipping previously failed video URL: %s", url)
+        return ""
+
     os.makedirs(save_dir, exist_ok=True)
 
     try:
         import yt_dlp
 
-        output_template = os.path.join(save_dir, "%(id)s.%(ext)s")
+        if filename:
+            # Use custom filename - strip extension if provided
+            base_name = os.path.splitext(filename)[0]
+            output_template = os.path.join(save_dir, f"{base_name}.%(ext)s")
+        else:
+            output_template = os.path.join(save_dir, "%(id)s.%(ext)s")
 
         format_str = (
             f"bestvideo[height<={VIDEO_MAX_RESOLUTION}]"
@@ -97,6 +114,7 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR) -> str:
             info = ydl.extract_info(url, download=True)
             if info is None:
                 logger.error("Failed to extract info for %s", url)
+                _failed_video_urls.add(url)
                 return ""
             filename = ydl.prepare_filename(info)
             if not os.path.exists(filename):
@@ -108,12 +126,19 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR) -> str:
             return filename
 
         logger.error("Video file not found after download: %s", filename)
+        _failed_video_urls.add(url)
         return ""
     except ImportError:
         logger.error("yt-dlp not installed. Run: pip install yt-dlp")
         return ""
     except Exception as e:
-        logger.error("Failed to download video %s: %s", url, e)
+        error_str = str(e).lower()
+        if any(kw in error_str for kw in ("bot", "sign in", "confirm", "blocked", "captcha")):
+            _failed_video_urls.add(url)
+            logger.warning("Permanently failed video URL (bot detection): %s", url)
+        else:
+            logger.error("Failed to download video %s: %s", url, e)
+            _failed_video_urls.add(url)
         return ""
 
 

@@ -1,4 +1,4 @@
-"""Enhanced graph builder with subgraph support and plugin registry."""
+"""Graph builder for the research agent state machine using a plugin registry."""
 
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ def route_after_planner(state: ResearchState) -> str:
 
     Routes to the correct execution node based on the first task type.
     """
-    if state.get("status") == "max_iterations_reached":
+    status = state.get("status")
+    if status in ("max_iterations_reached", "partial_complete"):
         return "finalize"
 
     tasks = state.get("tasks", [])
@@ -60,6 +61,12 @@ def build_graph(
     Graph topology:
         START -> planner -> {discover, evidence, media, video_extract}
         -> verify -> coverage -> {planner, finalize} -> END
+
+    Termination conditions:
+        - All tasks complete (status == "complete")
+        - Max iterations reached (status == "max_iterations_reached")
+        - No new progress detected (status == "partial_complete")
+        - Planner generates duplicate tasks (status == "partial_complete")
     """
     if use_registry:
         register_default_components()

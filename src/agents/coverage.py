@@ -1,4 +1,13 @@
-"""Coverage agent - evaluate what is missing and decide if more research is needed."""
+"""Coverage agent - evaluate completeness and decide if more research is needed.
+
+The coverage agent evaluates gap analysis and routes the graph. It includes:
+
+- No-progress detection: snapshots image/spec/view counts and compares against
+  previous check. If nothing changed, marks status as "partial_complete".
+- YouTube failure handling: if all video URLs failed (bot detection), does not
+  force video extraction — continues with images/specs only.
+- Focus-aware evaluation: respects collect_specs, collect_media, and focus areas.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +35,37 @@ class CoverageAgent(BaseAgent):
         """Check what media we should collect: images, videos, or both."""
         return state.get("collect_media", "both")
 
+    def _is_no_progress(self, state: dict) -> bool:
+        """Check if no new data was collected since last coverage check.
+
+        Compares current counts against a snapshot stored in state.
+        Returns True if images, specs, and views are all unchanged.
+        """
+        current_images = len(state.get("images", []))
+        current_specs = len(state.get("specifications", {}))
+        current_views = len(state.get("discovered_views", {}))
+
+        prev_images = state.get("_prev_images_count", 0)
+        prev_specs = state.get("_prev_specs_count", 0)
+        prev_views = state.get("_prev_views_count", 0)
+
+        if (
+            current_images == prev_images
+            and current_specs == prev_specs
+            and current_views == prev_views
+            and current_images + current_specs + current_views > 0
+        ):
+            return True
+        return False
+
+    def _snapshot_progress(self, state: dict) -> dict:
+        """Return state updates to snapshot current progress."""
+        return {
+            "_prev_images_count": len(state.get("images", [])),
+            "_prev_specs_count": len(state.get("specifications", {})),
+            "_prev_views_count": len(state.get("discovered_views", {})),
+        }
+
     def analyze(self, state: dict) -> dict:
         """Evaluate what is missing based on collect mode."""
         self.logger.info("Coverage agent executing")
@@ -33,6 +73,7 @@ class CoverageAgent(BaseAgent):
         collect_specs = self._can_collect_specs(state)
         collect_media = self._can_collect_media(state)
         focus = self._get_focus(state)
+        failed_media_urls = state.get("failed_media_urls", [])
 
         required_views = state.get("required_views", [])
         discovered_views = state.get("discovered_views", {})
@@ -42,12 +83,30 @@ class CoverageAgent(BaseAgent):
         images_count = len(state.get("images", []))
         videos_count = len(state.get("videos", []))
 
+        # Check for no-progress (same counts as last check)
+        no_progress = self._is_no_progress(state)
+        updates = self._snapshot_progress(state)
+
+        if no_progress:
+            self.logger.warning(
+                "No new data collected since last check (%d images, %d specs, %d views). "
+                "Marking as partial_complete.",
+                images_count,
+                len(specs),
+                len(discovered_views),
+            )
+            updates["status"] = "partial_complete"
+            updates["missing_views"] = missing_views
+            return updates
+
         # No specs mode - skip spec requirements
         if not collect_specs:
             if collect_media == "videos":
                 status = "complete" if videos_count >= 2 else "incomplete"
                 self.logger.info("Coverage (videos only): %d videos", videos_count)
-                return {"missing_views": [], "status": status}
+                updates["missing_views"] = []
+                updates["status"] = status
+                return updates
 
             if collect_media == "images":
                 status = "complete" if not missing_views else "incomplete"
@@ -56,33 +115,59 @@ class CoverageAgent(BaseAgent):
                     len(required_views) - len(missing_views),
                     len(required_views),
                 )
-                return {"missing_views": missing_views, "status": status}
+                updates["missing_views"] = missing_views
+                updates["status"] = status
+                return updates
 
             # Both images+videos, no specs
+            # If all video URLs failed and no video-sourced images, treat as images-only
+            if failed_media_urls and videos_count == 0:
+                status = "complete" if not missing_views else "incomplete"
+                self.logger.info(
+                    "Coverage (media, videos failed): %d/%d views found",
+                    len(required_views) - len(missing_views),
+                    len(required_views),
+                )
+                updates["missing_views"] = missing_views
+                updates["status"] = status
+                return updates
+
             status = "complete" if not missing_views else "incomplete"
             self.logger.info(
                 "Coverage (media only): %d/%d views found",
                 len(required_views) - len(missing_views),
                 len(required_views),
             )
-            return {"missing_views": missing_views, "status": status}
+            updates["missing_views"] = missing_views
+            updates["status"] = status
+            return updates
 
         # Specs mode, no media
         if collect_media is None:
             status = "complete" if len(specs) >= 5 else "incomplete"
             self.logger.info("Coverage (specs only): %d specs collected", len(specs))
-            return {"missing_views": [], "status": status}
+            updates["missing_views"] = []
+            updates["status"] = status
+            return updates
 
         # Full mode - both specs and media
         has_youtube_focus = focus and FocusArea.YOUTUBE in focus.areas
         has_specs_focus = focus and FocusArea.SPECS in focus.areas
 
+        # YouTube focus: only force video extraction if YouTube hasn't failed
         if has_youtube_focus:
             video_images = [
                 img for img in state.get("images", [])
                 if img.get("source") == "video"
             ]
-            if not video_images and missing_views:
+            # If all video downloads failed, don't force video extraction
+            if failed_media_urls and not video_images:
+                self.logger.info(
+                    "YouTube focus: all video URLs failed (%d failed), "
+                    "continuing without video extraction",
+                    len(failed_media_urls),
+                )
+            elif not video_images and missing_views:
                 if "find_videos" not in [t.get("type") for t in state.get("tasks", [])]:
                     self.logger.info("YouTube focus: forcing video extraction")
 
@@ -103,12 +188,15 @@ class CoverageAgent(BaseAgent):
             videos_count,
         )
 
-        return {"missing_views": missing_views, "status": status}
+        updates["missing_views"] = missing_views
+        updates["status"] = status
+        return updates
 
     def route(self, state: dict) -> str:
         """Route after coverage analysis."""
-        if state.get("status") == "max_iterations_reached":
+        status = state.get("status")
+        if status in ("max_iterations_reached", "partial_complete"):
             return "complete"
-        if state.get("status") == "incomplete":
+        if status == "incomplete":
             return "more_research"
         return "complete"

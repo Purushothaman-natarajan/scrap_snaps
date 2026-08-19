@@ -1,8 +1,7 @@
-"""LLM client configuration - Azure OpenAI provider."""
+"""LLM client configuration - Corporate Azure/OpenAI-compatible gateway."""
 
 from functools import lru_cache
 
-import openai
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
@@ -13,57 +12,79 @@ logger = get_logger(__name__)
 
 
 @lru_cache(maxsize=4)
-def _get_azure_llm(temperature: float) -> ChatOpenAI:
-    """Create and cache Azure OpenAI LLM instance."""
-    if not settings.azure_api_key or settings.azure_api_key == "your_azure_api_key_here":
-        logger.warning("AZURE_API_KEY is missing or invalid. LLM calls will fail.")
+def _get_azure_llm(temperature: float = 0.0) -> ChatOpenAI:
+    """Create and cache LLM instance for the corporate OpenAI-compatible gateway."""
 
-    if not settings.azure_endpoint:
-        logger.warning("AZURE_ENDPOINT is missing. LLM calls will fail.")
+    endpoint = settings.azure_endpoint.rstrip("/")
+    deployment = settings.azure_deployment
+    consumer_id = settings.azure_consumer_id.strip()
 
-    if not settings.azure_deployment:
-        logger.warning("AZURE_DEPLOYMENT is missing. LLM calls will fail.")
+    # Your corporate gateway does not use a normal Azure API key.
+    # It authenticates through the corporate endpoint + consumer header.
+    #
+    # openai-python requires a non-empty api_key during client creation,
+    # so "nokey" is intentionally used as a placeholder.
+    api_key = "nokey"
 
-    if not settings.azure_consumer_id:
-        logger.warning("AZURE_CONSUMER_ID is missing. LLM calls may fail.")
+    if not endpoint:
+        raise ValueError("AZURE_ENDPOINT is missing")
 
-    client = openai.OpenAI(
-        api_key=settings.azure_api_key,
-        base_url=f"{settings.azure_endpoint.rstrip('/')}/openai/v1/",
-        default_headers={
-            "X-Consumer-ID": settings.azure_consumer_id,
-        },
+    if not deployment:
+        raise ValueError("AZURE_DEPLOYMENT is missing")
+
+    if not consumer_id:
+        raise ValueError("AZURE_CONSUMER_ID is missing")
+
+    base_url = endpoint
+
+    # IMPORTANT:
+    #
+    # Your corporate gateway accepted the request when BOTH spellings
+    # were supplied:
+    #
+    #   x_niq_cis_consumer
+    #   x-niq-cis-consumer
+    #
+    # The test with only x_niq_cis_consumer returned:
+    #
+    #   Field required: header.x_niq_cis_consumer
+    #
+    # The test with both headers returned HTTP 200.
+    headers = {
+        "x_niq_cis_consumer": consumer_id,
+        "x-niq-cis-consumer": consumer_id,
+    }
+
+    logger.info(
+        "Initializing corporate Azure LLM: deployment=%s, "
+        "temperature=%s, base_url=%s, consumer_id_present=%s",
+        deployment,
+        temperature,
+        base_url,
+        bool(consumer_id),
     )
 
     return ChatOpenAI(
-        model=settings.azure_deployment,
+        model=deployment,
+        api_key=api_key,
+        base_url=base_url,
+        default_headers=headers,
         temperature=temperature,
-        openai_client=client,
         max_retries=settings.llm_max_retries,
         timeout=settings.llm_timeout,
     )
 
 
 def get_llm(temperature: float = 0.0) -> BaseChatModel:
-    """Return an Azure OpenAI LLM instance.
-
-    Args:
-        temperature: Sampling temperature (0.0 = deterministic).
-
-    Returns:
-        Configured LLM instance.
-    """
+    """Return the corporate Azure/OpenAI-compatible LLM."""
     return _get_azure_llm(temperature)
 
 
 def get_vision_llm(temperature: float = 0.0) -> BaseChatModel:
-    """Return a vision-capable LLM instance.
-
-    Uses the same Azure OpenAI model which supports vision.
-    """
+    """Return the vision-capable corporate LLM."""
     return get_llm(temperature)
 
 
 def clear_llm_cache() -> None:
-    """Clear the LLM instance cache. Useful for testing or config changes."""
+    """Clear cached LLM instances."""
     _get_azure_llm.cache_clear()

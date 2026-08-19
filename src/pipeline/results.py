@@ -18,8 +18,18 @@ def extract_result(final_state: dict[str, Any]) -> dict:
     specs = final_state.get("specifications", {})
     images = final_state.get("images", [])
     videos = final_state.get("videos", [])
+    sources = final_state.get("sources", [])
+    evidence = final_state.get("evidence", [])
 
+    source_urls = [s.get("url", "") for s in sources if s.get("url")]
+    evidence_urls = [e.get("source", "") for e in evidence if e.get("source")]
+    all_source_urls = list(dict.fromkeys(source_urls + evidence_urls))
+
+    image_urls = [img.get("url", "") for img in images if img.get("url")]
     image_paths = [img.get("local_path", "") for img in images if img.get("local_path")]
+    image_views = [img.get("view", "unknown") for img in images]
+
+    video_urls = [vid.get("url", "") for vid in videos if vid.get("url")]
     video_paths = [vid.get("local_path", "") for vid in videos if vid.get("local_path")]
 
     return {
@@ -28,9 +38,11 @@ def extract_result(final_state: dict[str, Any]) -> dict:
         "status": final_state.get("status", "unknown"),
         "confidence": final_state.get("confidence", 0.0),
         "specifications": specs,
-        "images_collected": len(images),
-        "videos_collected": len(videos),
+        "source_urls": all_source_urls,
+        "image_urls": image_urls,
         "image_paths": image_paths,
+        "image_views": image_views,
+        "video_urls": video_urls,
         "video_paths": video_paths,
         "error": _extract_error(final_state),
     }
@@ -50,7 +62,7 @@ def extract_result_for_row(row_data: dict, final_state: dict[str, Any]) -> dict:
     result["row_index"] = row_data.get("__row_index", result["row_index"])
 
     if not result["product_name"]:
-        for key in ["product", "name", "title", "item"]:
+        for key in ["product", "name", "title", "item", "product_name"]:
             if key in row_data and row_data[key]:
                 result["product_name"] = str(row_data[key])
                 break
