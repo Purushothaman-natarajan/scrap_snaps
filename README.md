@@ -2,6 +2,8 @@
 
 Autonomous product research agent powered by LangGraph. Given a product query, it discovers the product, extracts technical specifications, collects images from multiple views, and builds a verified evidence dossier. Supports both single-query mode and batch processing from Excel files.
 
+> 📚 **Developer Guide:** [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) — architecture, state/graph, agents, pipeline, DB, config, extending, debugging, security.
+
 ## Key Features
 
 - **Autonomous research loop** — Planner → discover/collect/verify → coverage cycle with automatic termination
