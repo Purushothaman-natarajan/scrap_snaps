@@ -70,7 +70,7 @@ class CoverageAgent(BaseAgent):
             return False
 
         new_items = total_current - total_prev
-        return new_items <= COVERAGE_NO_PROGRESS_THRESHOLD
+        return new_items < COVERAGE_NO_PROGRESS_THRESHOLD
 
     def _snapshot_progress(self, state: dict) -> dict:
         """Return state updates to snapshot current progress."""
@@ -91,7 +91,9 @@ class CoverageAgent(BaseAgent):
 
         required_views = state.get("required_views", [])
         discovered_views = state.get("discovered_views", {})
-        missing_views = [v for v in required_views if v not in discovered_views]
+        # Normalize discovered keys (lower, strip, space->underscore) to match REQUIRED_VIEWS
+        discovered_norm = {str(k).lower().strip().replace(" ", "_") for k in discovered_views}
+        missing_views = [v for v in required_views if v.lower() not in discovered_norm]
 
         specs = state.get("specifications", {})
         images_count = len(state.get("images", []))
@@ -160,7 +162,8 @@ class CoverageAgent(BaseAgent):
 
             # Both images+videos, no specs
             # If all video URLs failed and no video-sourced images, treat as images-only
-            if failed_media_urls and videos_count == 0:
+            failed_video_urls = [url for url in failed_media_urls if "youtu" in url.lower()]
+            if failed_video_urls and videos_count == 0:
                 status = "complete" if not missing_views else "incomplete"
                 self.logger.info(
                     "Coverage (media, videos failed): %d/%d views found",
@@ -200,12 +203,13 @@ class CoverageAgent(BaseAgent):
                 img for img in state.get("images", [])
                 if img.get("source") == "video"
             ]
+            failed_video_urls = [url for url in failed_media_urls if "youtu" in url.lower()]
             # If all video downloads failed, don't force video extraction
-            if failed_media_urls and not video_images:
+            if failed_video_urls and not video_images:
                 self.logger.info(
                     "YouTube focus: all video URLs failed (%d failed), "
                     "continuing without video extraction",
-                    len(failed_media_urls),
+                    len(failed_video_urls),
                 )
             elif not video_images and missing_views:
                 if "find_videos" not in [t.get("type") for t in state.get("tasks", [])]:
@@ -223,6 +227,18 @@ class CoverageAgent(BaseAgent):
                 status = "complete" if not missing_views else "incomplete"
         else:
             status = "complete" if not missing_views else "incomplete"
+
+        # Proximity check: if near max iterations and still incomplete, mark partial_complete
+        if status == "incomplete":
+            iterations = state.get("iterations", 0)
+            max_iterations = state.get("max_iterations", 30)
+            if iterations >= max_iterations * COVERAGE_PROXIMITY_RATIO:
+                self.logger.warning(
+                    "Iterations proximity in analyze: %d/%d. Marking partial_complete.",
+                    iterations,
+                    max_iterations,
+                )
+                status = "partial_complete"
 
         self.logger.info(
             "Coverage: %d/%d views found, %d specs, %d images, %d videos (cycle %d/%d)",

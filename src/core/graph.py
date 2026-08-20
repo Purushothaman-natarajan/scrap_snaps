@@ -14,11 +14,11 @@ logger = get_logger(__name__)
 
 
 def finalize(state: ResearchState) -> dict[str, Any]:
-    """Finalize node — preserve status from prior nodes, don't overwrite."""
+    """Finalize node — preserve terminal statuses, don't overwrite."""
     status = state.get("status")
     logger.info("Finalize node executing (status=%s)", status)
-    if status in ("partial_complete", "max_iterations_reached"):
-        return {}  # keep existing status, don't overwrite to "done"
+    if status in ("partial_complete", "max_iterations_reached", "complete", "failed"):
+        return {}  # keep existing terminal status
     return {"status": "done"}
 
 
@@ -45,6 +45,7 @@ def route_after_planner(state: ResearchState) -> str:
     elif first_task == "find_videos":
         return "video_extract"
 
+    logger.warning("Unknown task type '%s', routing to finalize", first_task)
     return "finalize"
 
 

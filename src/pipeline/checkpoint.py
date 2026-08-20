@@ -87,8 +87,11 @@ class CheckpointManager:
         self.save(checkpoint)
 
     def is_processed(self, checkpoint: CheckpointData, row_index: int) -> bool:
-        """Check if a row has already been processed."""
-        return row_index in checkpoint.completed_row_indices
+        """Check if a row has already been processed (completed or failed)."""
+        return (
+            row_index in checkpoint.completed_row_indices
+            or row_index in checkpoint.failed_row_indices
+        )
 
     def remove(self, input_file: str) -> None:
         """Remove checkpoint file."""

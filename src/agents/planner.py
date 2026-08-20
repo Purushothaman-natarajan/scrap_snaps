@@ -279,7 +279,8 @@ class PlannerAgent(BaseAgent):
 
             # Videos only (or video_urls/video_frames/images_and_video_urls modes)
             if collect_media in ("videos", "video_urls", "video_frames", "images_and_video_urls"):
-                if failed_media_urls:
+                failed_video_urls = [url for url in failed_media_urls if "youtu" in url.lower()]
+                if failed_video_urls:
                     self.logger.warning("All video URLs failed, cannot collect videos")
                     return {"tasks": [], "iterations": iterations}
                 return {
@@ -290,7 +291,8 @@ class PlannerAgent(BaseAgent):
             # Images only, both, or images_and_video_urls
             is_image_mode = collect_media in ("both", "images_and_video_urls")
             if has_youtube_focus and is_image_mode and images_count < 5:
-                if not failed_media_urls:
+                failed_video_urls = [url for url in failed_media_urls if "youtu" in url.lower()]
+                if not failed_video_urls:
                     return {
                         "tasks": _task("find_videos", state.get("missing_views")[0]),
                         "iterations": iterations,
@@ -301,11 +303,13 @@ class PlannerAgent(BaseAgent):
                     "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
-            elif collect_media in ("both", "images_and_video_urls") and not failed_media_urls:
-                return {
-                    "tasks": _task("find_videos", state.get("missing_views")[0], 0.8),
-                    "iterations": iterations,
-                }
+            elif collect_media in ("both", "images_and_video_urls"):
+                failed_video_urls = [url for url in failed_media_urls if "youtu" in url.lower()]
+                if not failed_video_urls:
+                    return {
+                        "tasks": _task("find_videos", state.get("missing_views")[0], 0.8),
+                        "iterations": iterations,
+                    }
 
         if has_specs_focus and len(state.get("specifications", {})) < 3:
             return {

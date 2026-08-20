@@ -104,7 +104,7 @@ def extract_result_for_row(
     result["row_index"] = row_data.get("__row_index", result["row_index"])
 
     if not result["product_name"]:
-        for key in ["product", "name", "title", "item", "product_name"]:
+        for key in ["product", "query", "name", "title", "item", "product_name"]:
             if key in row_data and row_data[key]:
                 result["product_name"] = str(row_data[key])
                 break
@@ -113,7 +113,10 @@ def extract_result_for_row(
 
 
 def _extract_error(state: dict) -> str:
-    """Extract error message from failed tasks."""
+    """Extract error message from failed tasks or state error."""
+    # Direct state error (from graph exception) takes precedence
+    if state.get("error"):
+        return str(state["error"])
     failed = state.get("failed_tasks", [])
     if not failed:
         return ""

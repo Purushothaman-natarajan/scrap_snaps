@@ -12,18 +12,19 @@ from __future__ import annotations
 from typing import TypedDict
 
 
-class ResearchState(TypedDict):
+class ResearchState(TypedDict, total=False):
     """TypedDict defining the full state schema for the research agent graph."""
 
     # User request
     query: str
+    __row_index: int  # Excel row number (0 for single-query)
 
     # Focus configuration
     focus_areas: list[str]
     focus_config: dict
     collect_specs: bool
-    collect_media: str  # 7 modes: images, videos, video_urls, video_frames,
-    # images_and_video_urls, both, none
+    collect_media: str | None  # 7 modes: images, videos, video_urls, video_frames,
+    # images_and_video_urls, both, none (None == none)
 
     # Canonical identity
     product: dict
@@ -71,6 +72,7 @@ class ResearchState(TypedDict):
     # Final
     confidence: float
     status: str
+    error: str
 
 
 def create_initial_state(
@@ -118,9 +120,11 @@ def create_initial_state(
         "serpapi_budget_remaining": SERPAPI_MAX_HITS_PER_ROW,
         "confidence": 0.0,
         "status": "started",
+        "__row_index": 0,
+        "error": "",
     }
 
-    # Merge any additional kwargs (like row_index)
+    # Merge any additional kwargs (like __row_index)
     state.update(kwargs) # type: ignore
 
     return state

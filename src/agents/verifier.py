@@ -32,7 +32,7 @@ class VerifierAgent(BaseAgent):
         evidence_list = state.get("evidence", [])
         images_list = state.get("images", [])
 
-        identity_conf = state.get("product", {}).get("confidence", 0.0)
+        identity_conf = (state.get("product") or {}).get("confidence", 0.0)
 
         evidence_conf = 0.0
         if evidence_list:

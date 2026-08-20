@@ -437,18 +437,27 @@ class MediaAgent(BaseAgent):
         from src.config import MAX_VIDEO_RESULTS
         selected_videos = videos[:MAX_VIDEO_RESULTS]
 
-        video_list = state.get("videos", [])
+        video_list = list(state.get("videos", []))
+        existing_urls = {v.get("url", "") for v in video_list}
+        tracker = get_failed_url_tracker()
         for v in selected_videos:
+            v_url = v.get("url", "")
+            if not v_url or v_url in existing_urls:
+                continue
+            if tracker.is_failed(v_url):
+                continue
             video_list.append({
-                "url": v.get("url", ""),
+                "url": v_url,
                 "title": v.get("title", ""),
                 "duration": v.get("duration", 0),
                 "score": v.get("score", 0.0),
             })
+            existing_urls.add(v_url)
 
         tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
         return {
             "videos": video_list,
             "tasks": tasks,
+            "failed_media_urls": list(tracker.get_all()),
             "serpapi_budget_remaining": get_search_cache().remaining(),
         }

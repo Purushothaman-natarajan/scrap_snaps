@@ -143,8 +143,16 @@ class PipelineRunner:
                     summary["skipped"] += 1
                     continue
 
-                # Clear cache and reset tracker for each new product row
+                # Clear per-row singletons to avoid cross-product contamination
                 get_search_cache().clear()
+                from src.tools.media.images import _analyze_cache, _analyze_cache_timestamps
+                from src.tools.utils.failed_urls import get_failed_url_tracker
+                from src.tools.utils.hashing import get_phash_cache
+
+                get_failed_url_tracker().clear()
+                get_phash_cache().clear()
+                _analyze_cache.clear()
+                _analyze_cache_timestamps.clear()
                 tracker = get_usage_tracker()
                 tracker.reset()
                 tracker.start()
@@ -203,7 +211,10 @@ class PipelineRunner:
                         "error": str(e),
                     })
 
-        self.checkpoint_mgr.remove(config.input_file)
+        if summary["failed"] == 0:
+            self.checkpoint_mgr.remove(config.input_file)
+        else:
+            logger.info("Checkpoint kept for %d failed rows", summary["failed"])
         elapsed = time.time() - checkpoint.started_at
         summary["elapsed_seconds"] = round(elapsed, 1)
 
