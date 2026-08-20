@@ -1,15 +1,26 @@
-"""Pydantic Settings for centralized configuration management."""
+"""Pydantic Settings for centralized configuration management.
+
+Configuration is loaded from two sources:
+  1. ``config.yaml`` — single source of truth for ALL non-credential settings
+  2. ``.env`` — credentials only (AZURE_*, SERPAPI_KEY, DATABASE_URL)
+
+Priority: env vars > config.yaml > field defaults.
+"""
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from src.config.yaml_loader import DEFAULT_CONFIG_PATH, load_config_yaml
 
 
 class Settings(BaseSettings):
-    """Application settings - flat env vars from .env file."""
+    """Application settings — loaded from config.yaml + .env for credentials."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -18,7 +29,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # === Azure OpenAI ===
+    # === Azure OpenAI (credentials — ALWAYS from .env) ===
     azure_api_key: str = Field(default="")
     azure_endpoint: str = Field(default="")
     azure_deployment: str = Field(default="")
@@ -27,10 +38,10 @@ class Settings(BaseSettings):
     llm_max_retries: int = Field(default=3)
     llm_timeout: float = Field(default=60.0)
 
-    # === SerpAPI ===
+    # === SerpAPI (credential — ALWAYS from .env) ===
     serpapi_key: str = Field(default="")
 
-    # === Database ===
+    # === Database (credential — ALWAYS from .env) ===
     database_url: str = Field(default="sqlite:///research.db")
     db_echo: bool = Field(default=False)
     db_pool_size: int = Field(default=5)
@@ -39,18 +50,12 @@ class Settings(BaseSettings):
     # === Execution ===
     max_iterations: int = Field(default=15)
     recursion_limit: int = Field(default=200)
-    required_views: str = Field(default="front,back,left,right,top")
+    required_views: str = Field(default="front,back,left,right,top,360_strip,multi_angle_composite")
 
     # === Focus ===
     focus_areas: str = Field(default="product_pages,seller_images,youtube,specs")
     collect_specs: bool = Field(default=True)
-    collect_media: str = Field(default="both")
-    #   images      - image search + download + classify only
-    #   videos      - full video pipeline (download → extract → classify → AI select)
-    #   video_urls  - YouTube search only, return URLs, no download
-    #   video_frames - download + extract frames + classify, skip AI frame selection
-    #   both        - images + videos (full pipeline)
-    #   none        - no media collection, specs only
+    collect_media: str = Field(default="images_and_video_urls")
 
     # === Networking ===
     rate_limit_interval: float = Field(default=1.0)
@@ -78,6 +83,7 @@ class Settings(BaseSettings):
     image_download_limit: int = Field(default=2)
     image_crop_ratio: float = Field(default=0.7)
     image_analyze_cache_ttl: float = Field(default=3600.0)
+    analyze_cache_max_size: int = Field(default=1000)
 
     # === Video Extraction ===
     video_download_dir: str = Field(default="downloads/videos")
@@ -125,6 +131,38 @@ class Settings(BaseSettings):
 
     # === Failed URL Tracking ===
     failed_url_ttl: float = Field(default=300.0)
+
+    @model_validator(mode="after")
+    def _overlay_yaml_config(self) -> Settings:
+        """Overlay non-credential values from config.yaml.
+
+        YAML values are used as the base; env vars override for credentials.
+        """
+        config_path = os.environ.get("SCRAP_SNAPS_CONFIG", DEFAULT_CONFIG_PATH)
+        if not Path(config_path).exists():
+            return self
+
+        yaml_data = load_config_yaml(config_path)
+
+        # Credential fields — never override from YAML
+        credential_fields = {
+            "azure_api_key", "azure_endpoint", "azure_deployment",
+            "azure_consumer_id", "serpapi_key", "database_url",
+        }
+
+        for yaml_key, yaml_value in yaml_data.items():
+            # Convert UPPER_SNAKE to snake_case for pydantic field lookup
+            field_name = yaml_key.lower()
+            if field_name in credential_fields:
+                continue  # credentials always from .env
+            if field_name in self.model_fields and yaml_value is not None:
+                current = getattr(self, field_name)
+                # Only override if current is the default (env var didn't set it)
+                default = self.model_fields[field_name].default
+                if current == default:
+                    setattr(self, field_name, yaml_value)
+
+        return self
 
     @property
     def required_views_list(self) -> list[str]:

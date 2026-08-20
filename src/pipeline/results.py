@@ -58,6 +58,8 @@ def extract_result(
         "image_views": image_views,
         "video_urls": video_urls,
         "video_paths": video_paths,
+        "required_views": final_state.get("required_views", []),
+        "missing_views": final_state.get("missing_views", []),
         "images": [
             {
                 "url": img.get("url", ""),

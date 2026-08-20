@@ -6,8 +6,8 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 
 - **Autonomous research loop** — Planner → discover/collect/verify → coverage cycle with automatic termination
 - **Focus-aware search** — Configurable focus areas (product pages, seller images, YouTube, specs)
-- **Configurable collection** — 6 media modes: `images`, `videos`, `video_urls`, `video_frames`, `both`, `none`
-- **Custom view types** — `REQUIRED_VIEWS` is user-configurable; LLM prompts adapt dynamically
+- **Configurable collection** — 7 media modes: `images`, `videos`, `video_urls`, `video_frames`, `images_and_video_urls`, `both`, `none`
+- **Custom view types** — `REQUIRED_VIEWS` is user-configurable; LLM prompts adapt dynamically. Includes standard angles (`front`, `back`, `left`, `right`, `top`) plus composite views (`360_strip`, `multi_angle_composite`)
 - **Search caching** — In-memory cache with query normalization avoids redundant SerpAPI calls per run
 - **Per-row API limiting** — `SERPAPI_MAX_HITS_PER_ROW` prevents SerpAPI quota burn
 - **Failure tracking** — TTL-based `FailedURLTracker` (configurable `FAILED_URL_TTL`) shared across rows
@@ -67,7 +67,7 @@ All state flows through a single `ResearchState` TypedDict. Understanding this s
 | `focus_areas` | `list[str]` | Active focus area values |
 | `focus_config` | `dict` | FocusConfig serialized |
 | `collect_specs` | `bool` | Whether to extract specifications |
-| `collect_media` | `str` | `"images"`, `"videos"`, `"video_urls"`, `"video_frames"`, `"both"`, or `None` |
+| `collect_media` | `str` | `"images"`, `"videos"`, `"video_urls"`, `"video_frames"`, `"images_and_video_urls"`, `"both"`, or `None` |
 | `product` | `dict` | Canonical product identity (name, brand, mpn, model) |
 | `candidates` | `list[dict]` | Product candidates from discovery |
 | `search_queries` | `list[str]` | Generated search queries |
@@ -115,7 +115,6 @@ scrap_snaps/
 ├── .gitignore
 ├── pyproject.toml            # Package config (hatchling build)
 ├── uv.lock                   # Reproducible dependency lock
-├── pipeline.json             # Default batch pipeline config
 │
 ├── src/
 │   ├── __init__.py
@@ -194,8 +193,7 @@ scrap_snaps/
 │       ├── __init__.py
 │       ├── focus.py          # FocusArea enum, FocusConfig
 │       ├── query_builder.py  # Focus-aware query generation
-│       ├── filters.py        # Domain filtering, source scoring
-│       └── focus_config.py   # Focus configuration helpers
+│       └── filters.py        # Domain filtering, source scoring
 │
 └── tests/
     ├── __init__.py
@@ -223,16 +221,30 @@ playwright install chromium
 # macOS: brew install ffmpeg
 # Windows: choco install ffmpeg
 
-# Set up environment variables
+# Set up credentials (required)
 cp .env.example .env
 # Edit .env and add your API keys
+
+# All other settings are in config.yaml (edit as needed)
 ```
 
 ## Configuration
 
-All configuration is via environment variables. Copy `.env.example` to `.env` and edit.
+Configuration uses two files:
 
-### Azure OpenAI (Corporate Gateway)
+| File | Purpose | Committed to git? |
+|------|---------|-------------------|
+| `config.yaml` | **All settings** — execution, networking, scraping, media, search, logging, pipeline | Yes |
+| `.env` | **Credentials only** — API keys, endpoints, database URL | No (gitignored) |
+
+**Priority:** env vars > config.yaml > field defaults.
+
+```
+config.yaml          ← single source of truth for all non-credential settings
+  .env               ← credentials only (AZURE_*, SERPAPI_KEY, DATABASE_URL)
+```
+
+### Azure OpenAI (Corporate Gateway) — .env only
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -247,16 +259,17 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `DATABASE_URL` | `sqlite:///research.db` | SQLAlchemy database connection string |
 | `MAX_ITERATIONS` | `15` | Maximum planner iterations before forced stop |
 | `RECURSION_LIMIT` | `200` | LangGraph recursion limit (auto-scaled to `max(MAX_ITERATIONS*8, this)`) |
-| `REQUIRED_VIEWS` | `front,back,left,right,top` | Comma-separated image views to collect (custom views supported) |
+| `REQUIRED_VIEWS` | `front,back,left,right,top,360_strip,multi_angle_composite` | Comma-separated image views to collect (custom views supported) |
 | `FOCUS_AREAS` | `product_pages,seller_images,youtube,specs` | Comma-separated focus areas |
 | `COLLECT_SPECS` | `true` | Collect specifications from web pages |
-| `COLLECT_MEDIA` | `both` | What media to collect (see below) |
+| `COLLECT_MEDIA` | `images_and_video_urls` | What media to collect (see below) |
 
 **`COLLECT_MEDIA` options:**
 - `images` — image search + download + classify only
 - `videos` — full video pipeline (download → extract → classify → AI select)
 - `video_urls` — YouTube search only, return URLs, no download
 - `video_frames` — download + extract frames + classify, skip AI frame selection
+- `images_and_video_urls` — images (full pipeline) + video URLs only (closest match)
 - `both` — images + videos (full pipeline)
 - `none` — no media collection, specs only
 
@@ -286,6 +299,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `IMAGE_DOWNLOAD_LIMIT` | `2` | Max images to download per search result page |
 | `IMAGE_CROP_RATIO` | `0.7` | Center crop ratio (0.5-1.0, lower = more aggressive) |
 | `IMAGE_ANALYZE_CACHE_TTL` | `3600` | Image analysis cache TTL in seconds |
+| `ANALYZE_CACHE_MAX_SIZE` | `1000` | Max entries in pHash analysis cache (LRU eviction) |
 
 ### Video Extraction
 
@@ -381,36 +395,53 @@ scrap-snaps "Sony WH-1000XM5" --output results/sony.json
 ### Batch Pipeline Mode
 
 ```bash
-# Process an Excel file with default settings
+# Process an Excel file (reads pipeline settings from config.yaml)
 scrap-snaps-pipeline --input products.xlsx
 
-# With custom settings
+# Override settings from config.yaml via CLI flags
 scrap-snaps-pipeline --input products.xlsx --batch-size 5 --collect-media images
 
-# Use a config file
-scrap-snaps-pipeline --config pipeline.json
+# Use a legacy JSON config file
+scrap-snaps-pipeline --config pipeline.json --input products.xlsx
 
 # Resume interrupted run (uses checkpoint)
 scrap-snaps-pipeline --input products.xlsx
 ```
 
-#### pipeline.json
+### Config File (config.yaml)
 
-```json
-{
-  "input_file": "input.xlsx",
-  "output_file": "results.xlsx",
-  "sheet": null,
-  "header_row": 1,
-  "batch_size": 10,
-  "collect_specs": true,
-  "collect_media": "both",
-  "focus_areas": "product_pages,seller_images",
-  "max_iterations": 15,
-  "storage_backend": "local",
-  "storage_base_dir": "downloads",
-  "skip_existing": true
-}
+All non-credential settings live in `config.yaml`. Credentials stay in `.env`:
+
+```yaml
+# config.yaml
+execution:
+  max_iterations: 15
+  required_views: [front, back, left, right, top, 360_strip, multi_angle_composite]
+
+focus:
+  areas: [product_pages, seller_images, youtube, specs]
+  collect_specs: true
+  collect_media: images_and_video_urls  # images | videos | video_urls | video_frames | images_and_video_urls | both | none
+
+# ... networking, scraping, image, video, search, logging, pipeline sections
+
+pipeline:
+  input_file: input.xlsx
+  output_file: results.xlsx
+  batch_size: 10
+```
+
+Override any YAML setting with an env var:
+
+```bash
+MAX_ITERATIONS=20 scrap-snaps "Sony WH-1000XM5"
+COLLECT_MEDIA=images scrap-snaps-pipeline --input products.xlsx
+```
+
+Set a custom config path:
+
+```bash
+SCRAP_SNAPS_CONFIG=my_config.yaml scrap-snaps "Sony WH-1000XM5"
 ```
 
 ## Tools
@@ -670,15 +701,25 @@ print(f"Tokens: {usage['input_tokens']} in / {usage['output_tokens']} out")
 
 ### Configuration
 
-Flat Pydantic Settings with env var binding:
+Settings are loaded from `config.yaml` (non-credential) + `.env` (credentials):
 
 ```python
 from src.config import settings, COLLECT_SPECS, COLLECT_MEDIA, SEARCH_CACHE_SIZE
 
-print(settings.azure_endpoint)
-print(COLLECT_SPECS)       # True
-print(COLLECT_MEDIA)       # "both"
-print(SEARCH_CACHE_SIZE)   # 500
+print(settings.azure_endpoint)  # from .env
+print(COLLECT_SPECS)            # True (from config.yaml)
+print(COLLECT_MEDIA)            # "both" (from config.yaml)
+print(SEARCH_CACHE_SIZE)        # 500 (from config.yaml)
+```
+
+Pipeline config from the `pipeline:` section of config.yaml:
+
+```python
+from src.pipeline.runner import PipelineConfig
+
+config = PipelineConfig.from_yaml("config.yaml")
+print(config.input_file)    # "input.xlsx"
+print(config.batch_size)    # 10
 ```
 
 ### LLM Client

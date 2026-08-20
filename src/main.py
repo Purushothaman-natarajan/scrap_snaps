@@ -110,43 +110,103 @@ def run_research(
         cache_stats["misses"],
     )
 
+    usage_metrics = tracker.get_stats(search_cache_stats=cache_stats)
+
+    # Build result — fallback if graph produced no output
     if final_state:
-        usage_metrics = tracker.get_stats(search_cache_stats=cache_stats)
-
         result = extract_result(final_state, usage_metrics=usage_metrics)
+    else:
+        logger.warning("Graph produced no output — saving fallback result")
+        result = {
+            "query": query,
+            "product_name": query,
+            "status": "failed",
+            "confidence": 0.0,
+            "error": "Graph produced no output (recursion limit or crash)",
+            "specifications": {},
+            "source_urls": [],
+            "image_urls": [],
+            "image_paths": [],
+            "image_views": [],
+            "video_urls": [],
+            "video_paths": [],
+            "images": [],
+            "videos": [],
+            "required_views": [],
+            "missing_views": [],
+        }
 
-        # Save to database
-        try:
-            product_id = save_result_to_db(result, DATABASE_URL)
-            if product_id:
-                save_run_metrics(product_id, usage_metrics, DATABASE_URL)
-        except Exception as e:
-            logger.warning("Failed to save result to DB: %s", e)
+    status = result.get("status", "unknown")
+    is_failure = status in ("failed", "max_iterations_reached")
+    is_partial = status == "partial_complete"
 
-        # Save to JSON file
-        try:
-            result["search_cache_stats"] = cache_stats
-            result["run_query"] = query
+    # Save to database
+    product_id = None
+    try:
+        product_id = save_result_to_db(result, DATABASE_URL)
+        if product_id:
+            save_run_metrics(product_id, usage_metrics, DATABASE_URL)
+    except Exception as e:
+        logger.warning("Failed to save result to DB: %s", e)
 
-            if not output_path:
-                slug = _slugify(query) or "unnamed_run"
-                output_dir = "results"
-                os.makedirs(output_dir, exist_ok=True)
-                output_path = os.path.join(output_dir, f"{slug}.json")
+    # Save to JSON file
+    try:
+        result["search_cache_stats"] = cache_stats
+        result["run_query"] = query
 
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=2, default=str)
-            logger.info("Results saved to %s", output_path)
-        except Exception as e:
-            logger.warning("Failed to save result to JSON: %s", e)
+        if not output_path:
+            slug = _slugify(query) or "unnamed_run"
+            output_dir = "results"
+            os.makedirs(output_dir, exist_ok=True)
+            suffix = "_fallback" if is_failure else ""
+            output_path = os.path.join(output_dir, f"{slug}{suffix}.json")
 
-        logger.info(
-            "Usage: %d input tokens, %d output tokens, %d LLM calls, %d SerpAPI calls",
-            usage_metrics["input_tokens"],
-            usage_metrics["output_tokens"],
-            usage_metrics["llm_calls"],
-            usage_metrics.get("serpapi_calls", 0),
-        )
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, default=str)
+        logger.info("Results saved to %s", output_path)
+    except Exception as e:
+        logger.warning("Failed to save result to JSON: %s", e)
+
+    logger.info(
+        "Usage: %d input tokens, %d output tokens, %d LLM calls, %d SerpAPI calls",
+        usage_metrics["input_tokens"],
+        usage_metrics["output_tokens"],
+        usage_metrics["llm_calls"],
+        usage_metrics.get("serpapi_calls", 0),
+    )
+
+    images_count = len(result.get("images", []))
+    videos_count = len(result.get("videos", []))
+    specs_count = len(result.get("specifications", {}))
+    sources_count = len(result.get("source_urls", []))
+
+    header = "  RESEARCH FAILED" if is_failure else (
+        "  RESEARCH PARTIAL" if is_partial else "  RESEARCH COMPLETE"
+    )
+    print("\n" + "=" * 60)
+    print(header)
+    print("=" * 60)
+    print(f"  Query:      {query}")
+    print(f"  Status:     {status}")
+    print(f"  Confidence: {result.get('confidence', 0.0):.2f}")
+    if is_failure:
+        print(f"  Error:      {result.get('error', 'unknown')}")
+    if is_partial:
+        missing = result.get("missing_views", [])
+        print(f"  Missing:    {', '.join(missing) if missing else 'none'}")
+    print(f"  Images:     {images_count}")
+    print(f"  Videos:     {videos_count}")
+    print(f"  Specs:      {specs_count}")
+    print(f"  Sources:    {sources_count}")
+    in_tokens = usage_metrics["input_tokens"]
+    out_tokens = usage_metrics["output_tokens"]
+    print(f"  Tokens:     {in_tokens} in / {out_tokens} out")
+    print(f"  LLM calls:  {usage_metrics['llm_calls']}")
+    print(f"  SerpAPI:    {usage_metrics.get('serpapi_calls', 0)} calls")
+    print(f"  Time:       {usage_metrics['elapsed_seconds']:.1f}s")
+    print(f"  Output:     {output_path}")
+    print(f"  DB ID:      {product_id or 'N/A'}")
+    print("=" * 60)
 
 
 def main():
@@ -157,7 +217,9 @@ def main():
     )
     parser.add_argument(
         "query",
-        help='Product to research (e.g. "Sony WH-1000XM5")',
+        nargs="?",
+        default="Sony WH-1000XM5",
+        help='Product to research (default: "Sony WH-1000XM5")',
     )
     parser.add_argument(
         "--focus",
@@ -181,7 +243,10 @@ def main():
     )
     parser.add_argument(
         "--collect-media",
-        choices=["images", "videos", "both", "none"],
+        choices=[
+            "images", "videos", "video_urls", "video_frames",
+            "images_and_video_urls", "both", "none",
+        ],
         default=None,
         help="What media to collect: images, videos, both (default), or none",
     )
@@ -190,8 +255,19 @@ def main():
         default=None,
         help="Output JSON file path (default: results/<query>.json)",
     )
+    parser.add_argument(
+        "--example",
+        action="store_true",
+        help="Run with fast demo settings (images only, no specs, 10 iterations)",
+    )
 
     args = parser.parse_args()
+
+    # Apply --example overrides
+    if args.example:
+        args.focus = "product_pages,youtube"
+        args.collect_media = "images"
+        args.collect_specs = False
 
     logging.basicConfig(
         level=logging.INFO,

@@ -9,6 +9,7 @@ Provides LangChain tools:
 Features:
   - pHash-based analysis cache (IMAGE_ANALYZE_CACHE_TTL, default 1h) avoids
     re-analyzing the same image across cycles
+  - ANALYZE_CACHE_MAX_SIZE (default 1000): max cache entries with LRU eviction
   - Dynamic view types from REQUIRED_VIEWS setting (supports custom views)
   - Configurable IMAGE_BATCH_SIZE (default 5) for cost/quality trade-off
   - Failed URL tracking via shared FailedURLTracker singleton
@@ -25,10 +26,12 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
 from src.config import (
+    ANALYZE_CACHE_MAX_SIZE,
     DOWNLOAD_DIR,
     IMAGE_ANALYZE_CACHE_TTL,
     IMAGE_BATCH_SIZE,
     MAX_DOWNLOAD_SIZE,
+    PHASH_SIMILARITY_THRESHOLD,
     REQUIRED_VIEWS,
 )
 from src.config.logging import get_logger
@@ -63,7 +66,12 @@ def _get_analyze_cache(phash: str) -> dict[str, Any] | None:
 
 
 def _put_analyze_cache(phash: str, result: dict[str, Any]) -> None:
-    """Store analysis result in cache."""
+    """Store analysis result in cache with LRU eviction."""
+    if len(_analyze_cache) >= ANALYZE_CACHE_MAX_SIZE and phash not in _analyze_cache:
+        # Evict oldest entry by timestamp
+        oldest = min(_analyze_cache_timestamps, key=_analyze_cache_timestamps.get)
+        del _analyze_cache[oldest]
+        _analyze_cache_timestamps.pop(oldest, None)
     _analyze_cache[phash] = result
     _analyze_cache_timestamps[phash] = time.monotonic()
 
@@ -171,6 +179,10 @@ def analyze_image(image_path: str) -> dict:
             "Analyze this product image. Determine the primary view of the product "
             f"from this list: [{view_options}]. "
             "Is it clearly a product image (not a person or generic scene)?\n\n"
+            "View classification guide:\n"
+            "- front, back, left, right, top, bottom: one angle\n"
+            "- 360_strip: flipbook strip rotating through all angles\n"
+            "- multi_angle_composite: grid combining multiple angles\n\n"
             "Reply strictly in this JSON format:\n"
             '{"product_match": true/false, "view": "one_of_the_options", '
             '"confidence": 0.0_to_1.0}'
@@ -262,6 +274,10 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
                 "1. Is it a product image (not a person or generic scene)?\n"
                 f"2. Primary view angle: {view_options}\n"
                 "3. Confidence (0.0-1.0)\n\n"
+                "View classification guide:\n"
+                "- front, back, left, right, top, bottom: one angle\n"
+                "- 360_strip: flipbook strip rotating through all angles\n"
+                "- multi_angle_composite: grid combining multiple angles\n\n"
                 "Reply in this JSON format:\n"
                 '{"results": [{"index": 0, "product_match": true/false, '
                 '"view": "one_of_options", "confidence": 0.0_to_1.0}, ...]}'
@@ -318,7 +334,7 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
 @log_tool_call
 def deduplicate_images(
     image_paths: list[str],
-    threshold: int = 10,
+    threshold: int = PHASH_SIMILARITY_THRESHOLD,
     cache: PHashCache | None = None,
 ) -> list[str]:
     """Take a list of image paths and return paths of unique images.

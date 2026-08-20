@@ -8,6 +8,7 @@ from src.agents.base import BaseAgent
 from src.search.focus import FocusConfig
 from src.search.query_builder import build_queries
 from src.tools.web import fetch_page, search_web
+from src.tools.web.cache import get_search_cache
 
 
 class ProductCandidate(BaseModel):
@@ -53,6 +54,20 @@ class ResearchAgent(BaseAgent):
         query = state.get("query", "")
         focus = self._get_focus(state)
 
+        # Budget check — skip search if exhausted
+        budget = get_search_cache().remaining()
+        if budget <= 0:
+            self.logger.warning("SerpAPI budget exhausted, skipping discovery search")
+            tasks = self.remove_tasks_by_type(state.get("tasks", []), "discover")
+            product = state.get("product")
+            return {
+                "candidates": state.get("candidates", []),
+                "product": product,
+                "sources": state.get("sources", []),
+                "tasks": tasks,
+                "serpapi_budget_remaining": 0,
+            }
+
         # Build focus-aware queries
         queries = build_queries(query, focus=focus, task_type="discover", limit=3)
         if not queries:
@@ -95,6 +110,7 @@ class ResearchAgent(BaseAgent):
             "product": product,
             "sources": results,
             "tasks": tasks,
+            "serpapi_budget_remaining": get_search_cache().remaining(),
         }
 
     def extract_evidence(self, state: dict) -> dict:
@@ -103,6 +119,18 @@ class ResearchAgent(BaseAgent):
         product = state.get("product", {})
         query = product.get("name", state.get("query", ""))
         focus = self._get_focus(state)
+
+        # Budget check — skip search if exhausted
+        budget = get_search_cache().remaining()
+        if budget <= 0:
+            self.logger.warning("SerpAPI budget exhausted, skipping evidence search")
+            tasks = self.remove_tasks_by_type(state.get("tasks", []), "verify_spec")
+            return {
+                "evidence": state.get("evidence", []),
+                "specifications": state.get("specifications", {}),
+                "tasks": tasks,
+                "serpapi_budget_remaining": 0,
+            }
 
         # Build focus-aware queries for specs
         queries = build_queries(query, focus=focus, task_type="verify_spec", limit=2)
@@ -137,4 +165,9 @@ class ResearchAgent(BaseAgent):
                 self.logger.warning("Evidence LLM failed: %s", e)
 
         tasks = self.remove_tasks_by_type(state.get("tasks", []), "verify_spec")
-        return {"evidence": evidence_list, "specifications": specs, "tasks": tasks}
+        return {
+            "evidence": evidence_list,
+            "specifications": specs,
+            "tasks": tasks,
+            "serpapi_budget_remaining": get_search_cache().remaining(),
+        }

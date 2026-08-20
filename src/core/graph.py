@@ -14,8 +14,11 @@ logger = get_logger(__name__)
 
 
 def finalize(state: ResearchState) -> dict[str, Any]:
-    """Finalize node to package up the results."""
-    logger.info("Finalize node executing")
+    """Finalize node — preserve status from prior nodes, don't overwrite."""
+    status = state.get("status")
+    logger.info("Finalize node executing (status=%s)", status)
+    if status in ("partial_complete", "max_iterations_reached"):
+        return {}  # keep existing status, don't overwrite to "done"
     return {"status": "done"}
 
 

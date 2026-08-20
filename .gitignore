@@ -55,6 +55,9 @@ downloads/
 *.gif
 *.webp
 
+# Runtime data
+data/
+
 # Playwright
 playwright-report/
 

@@ -6,10 +6,11 @@ based on current state. It includes:
 - Fingerprint-only dedup: deterministic MD5 fingerprint of task (type, target) pairs.
   If the same fingerprint appears >= 2 cycles, terminates with "partial_complete".
 - Failed URL awareness: skips scheduling tasks that would retry known-failed URLs.
-- Focus-aware task selection: respects collect_specs, collect_media (6 modes),
+- Focus-aware task selection: respects collect_specs, collect_media (7 modes),
   and focus_areas.
 - Configurable fallback: generates rule-based tasks when LLM fails, respecting
-  all media modes (images, videos, video_urls, video_frames, both, none).
+  all media modes (images, videos, video_urls, video_frames, images_and_video_urls,
+  both, none).
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ class PlannerAgent(BaseAgent):
 
     def _can_collect_media(self, state: dict) -> str:
         """Check what media we should collect: images, videos, or both."""
-        return state.get("collect_media", "both")
+        return state.get("collect_media", "images_and_video_urls")
 
     def run(self, state: dict) -> dict:
         """Execute the planner logic."""
@@ -125,6 +126,8 @@ class PlannerAgent(BaseAgent):
             collect_context += "\n  (YouTube search only — return URLs, no download)"
         elif collect_media == "video_frames":
             collect_context += "\n  (Download videos + extract frames, skip AI selection)"
+        elif collect_media == "images_and_video_urls":
+            collect_context += "\n  (Images + video URLs only — no video download)"
         elif collect_media is None or collect_media == "none":
             collect_context += "\n  (No media collection — specs only)"
 
@@ -134,6 +137,14 @@ class PlannerAgent(BaseAgent):
             failure_context = (
                 f"\n- Failed Media URLs: {len(failed_media_urls)} URLs "
                 f"(403/bot-detection). DO NOT retry these URLs."
+            )
+
+        # Build budget context
+        budget = state.get("serpapi_budget_remaining", 20)
+        budget_context = f"\n- SerpAPI Budget Remaining: {budget} calls"
+        if budget < 5:
+            budget_context += (
+                "\n  (Budget low — prefer verify_spec tasks over search tasks)"
             )
 
         # Build dedup context
@@ -158,7 +169,7 @@ class PlannerAgent(BaseAgent):
         - Images Collected: {len(state.get("images", []))}
         - Videos Processed: {len(state.get("videos", []))}
         - Failed Tasks: {len(state.get("failed_tasks", []))}
-{focus_context}{collect_context}{failure_context}{dedup_context}
+{focus_context}{collect_context}{failure_context}{budget_context}{dedup_context}
 
         Decide what tasks to execute next.
         If the product is not identified, output a 'discover' task.
@@ -218,7 +229,16 @@ class PlannerAgent(BaseAgent):
                 "iterations": iterations,
             }
 
+        # Budget nearly exhausted — skip search tasks, go to verification
+        budget = state.get("serpapi_budget_remaining", 20)
+        if budget < 3:
+            return {
+                "tasks": _task("verify_spec", "general"),
+                "iterations": iterations,
+            }
+
         # No specs mode - skip verify_spec tasks
+        failed_media_urls = state.get("failed_media_urls", [])
         if not collect_specs:
             if collect_media is None or collect_media == "none":
                 return {"tasks": [], "iterations": iterations}
@@ -227,8 +247,8 @@ class PlannerAgent(BaseAgent):
                     "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
-            elif collect_media in ("videos", "video_urls", "video_frames"):
-                if state.get("missing_views"):
+            elif collect_media in ("videos", "video_urls", "video_frames", "images_and_video_urls"):
+                if state.get("missing_views") and not failed_media_urls:
                     return {
                         "tasks": _task("find_videos", state.get("missing_views")[0]),
                         "iterations": iterations,
@@ -257,8 +277,8 @@ class PlannerAgent(BaseAgent):
         if state.get("missing_views"):
             images_count = len(state.get("images", []))
 
-            # Videos only (or video_urls/video_frames modes)
-            if collect_media in ("videos", "video_urls", "video_frames"):
+            # Videos only (or video_urls/video_frames/images_and_video_urls modes)
+            if collect_media in ("videos", "video_urls", "video_frames", "images_and_video_urls"):
                 if failed_media_urls:
                     self.logger.warning("All video URLs failed, cannot collect videos")
                     return {"tasks": [], "iterations": iterations}
@@ -267,8 +287,9 @@ class PlannerAgent(BaseAgent):
                     "iterations": iterations,
                 }
 
-            # Images only or both
-            if has_youtube_focus and collect_media == "both" and images_count < 5:
+            # Images only, both, or images_and_video_urls
+            is_image_mode = collect_media in ("both", "images_and_video_urls")
+            if has_youtube_focus and is_image_mode and images_count < 5:
                 if not failed_media_urls:
                     return {
                         "tasks": _task("find_videos", state.get("missing_views")[0]),
@@ -280,7 +301,7 @@ class PlannerAgent(BaseAgent):
                     "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
-            elif collect_media == "both" and not failed_media_urls:
+            elif collect_media in ("both", "images_and_video_urls") and not failed_media_urls:
                 return {
                     "tasks": _task("find_videos", state.get("missing_views")[0], 0.8),
                     "iterations": iterations,

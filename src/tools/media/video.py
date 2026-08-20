@@ -12,6 +12,8 @@ All thresholds are configurable via settings:
   - VIDEO_AI_SELECTION_MAX_FRAMES (default 12): max frames for AI selection
   - VIDEO_FRAME_INTERVAL (default 5.0): supplemental sampling interval
   - VIDEO_MAX_RESOLUTION (default 480): max download resolution
+  - VIDEO_MIN_DURATION (default 180): min video duration in seconds
+  - VIDEO_MAX_DURATION (default 900): max video duration in seconds
 """
 
 import base64
@@ -23,12 +25,15 @@ from langchain_core.tools import tool
 
 from src.config import (
     AI_FRAME_SELECTION,
+    REQUIRED_VIEWS,
     VIDEO_AI_SELECTION_MAX_FRAMES,
     VIDEO_DOWNLOAD_DIR,
     VIDEO_FRAME_INTERVAL,
     VIDEO_FRAME_JPEG_QUALITY,
+    VIDEO_MAX_DURATION,
     VIDEO_MAX_FRAMES_PER_VIEW,
     VIDEO_MAX_RESOLUTION,
+    VIDEO_MIN_DURATION,
     VIDEO_SCENE_THRESHOLD,
 )
 from src.config.logging import get_logger
@@ -54,11 +59,11 @@ def score_video(video: dict) -> float:
         score += 0.3
 
     duration = _parse_duration(video.get("duration", 0))
-    if 180 <= duration <= 900:
+    if VIDEO_MIN_DURATION <= duration <= VIDEO_MAX_DURATION:
         score += 0.2
-    elif 60 <= duration < 180:
+    elif (VIDEO_MIN_DURATION // 3) <= duration < VIDEO_MIN_DURATION:
         score += 0.1
-    elif duration > 1800:
+    elif duration > VIDEO_MAX_DURATION * 2:
         score -= 0.2
 
     if 0 < duration < 60:
@@ -267,18 +272,27 @@ def select_best_frames(
         sample_frames = frame_paths[:VIDEO_AI_SELECTION_MAX_FRAMES]
 
         content_parts = []
+        video_views = ", ".join(REQUIRED_VIEWS + ["bottom", "detail", "unknown"])
         content_parts.append({
             "type": "text",
             "text": (
-                f"These are {len(sample_frames)} frames from product review videos.\n"
-                f"For each frame, determine:\n"
-                f"1. Primary view angle: front, back, left, right, top, bottom, detail, unknown\n"
-                f"2. Product visibility score (0.0-1.0): how clearly is the product shown?\n"
-                f"3. Image quality score (0.0-1.0): focus, lighting, no obstructions?\n"
-                f"4. A brief reason for the rating\n\n"
-                f"Reply in this JSON format:\n"
-                f'{{"frames": [{{"index": 0, "view": "front", "product_vis": 0.9, '
-                f'"quality": 0.8, "reason": "..."}}, ...]}}'
+                f"These are {len(sample_frames)} frames from product review "
+                "videos.\n"
+                "For each frame, determine:\n"
+                f"1. Primary view angle: {video_views}\n"
+                "2. Product visibility score (0.0-1.0)\n"
+                "3. Image quality score (0.0-1.0)\n"
+                "4. A brief reason for the rating\n\n"
+                "View classification guide:\n"
+                "- front, back, left, right, top, bottom: one angle\n"
+                "- 360_strip: flipbook strip rotating through all angles\n"
+                "- multi_angle_composite: grid combining multiple angles\n"
+                "- detail: close-up of a specific feature\n"
+                "- unknown: cannot determine a clear view\n\n"
+                "Reply in this JSON format:\n"
+                '{"frames": [{"index": 0, "view": "front", '
+                '"product_vis": 0.9, "quality": 0.8, '
+                '"reason": "..."}, ...]}'
             ),
         })
 

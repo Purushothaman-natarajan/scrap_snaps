@@ -1,8 +1,10 @@
 """CLI entry point for the batch pipeline.
 
-Parses command-line arguments for pipeline.json config or individual
-flags (--input, --batch-size, --collect-media, etc.) and runs the
-PipelineRunner.
+Parses command-line arguments for config.yaml or individual flags
+(--input, --batch-size, --collect-media, etc.) and runs the PipelineRunner.
+
+Default config: config.yaml (pipeline section). Legacy JSON config still
+supported via --config flag.
 """
 
 import argparse
@@ -17,22 +19,22 @@ def main():
     """CLI entry point for batch processing."""
     parser = argparse.ArgumentParser(
         description="Batch Product Research Pipeline",
-        usage="%(prog)s --input <file.xlsx> [options]",
+        usage="%(prog)s [--input <file.xlsx>] [options]",
     )
     parser.add_argument(
         "--input", "-i",
-        required=True,
-        help="Input Excel file path",
+        default=None,
+        help="Input Excel file path (overrides config.yaml pipeline.input_file)",
     )
     parser.add_argument(
         "--output", "-o",
         default=None,
-        help="Output Excel file path (default: results_<input>.xlsx)",
+        help="Output Excel file path (overrides config.yaml pipeline.output_file)",
     )
     parser.add_argument(
         "--config", "-c",
         default=None,
-        help="Pipeline config JSON file (overrides other args)",
+        help="Config YAML/JSON file (default: config.yaml)",
     )
     parser.add_argument(
         "--sheet",
@@ -42,20 +44,20 @@ def main():
     parser.add_argument(
         "--header-row",
         type=int,
-        default=1,
-        help="Row number containing headers (default: 1)",
+        default=None,
+        help="Row number containing headers (default: from config.yaml)",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=10,
-        help="Rows per batch (default: 10)",
+        default=None,
+        help="Rows per batch (default: from config.yaml)",
     )
     parser.add_argument(
         "--collect-specs",
         action="store_true",
-        default=True,
-        help="Collect specifications (default: true)",
+        default=None,
+        help="Collect specifications",
     )
     parser.add_argument(
         "--no-collect-specs",
@@ -65,32 +67,35 @@ def main():
     )
     parser.add_argument(
         "--collect-media",
-        choices=["images", "videos", "both", "none"],
-        default="both",
-        help="What media to collect (default: both)",
+        choices=[
+            "images", "videos", "video_urls", "video_frames",
+            "images_and_video_urls", "both", "none",
+        ],
+        default=None,
+        help="What media to collect (default: from config.yaml)",
     )
     parser.add_argument(
         "--focus",
-        default="",
+        default=None,
         help="Comma-separated focus areas",
     )
     parser.add_argument(
         "--max-iterations",
         type=int,
-        default=30,
-        help="Max iterations per row (default: 30)",
+        default=None,
+        help="Max iterations per row (default: from config.yaml)",
     )
     parser.add_argument(
         "--storage",
         choices=["local", "azure"],
-        default="local",
-        help="Storage backend (default: local)",
+        default=None,
+        help="Storage backend (default: from config.yaml)",
     )
     parser.add_argument(
         "--no-skip",
         dest="skip_existing",
         action="store_false",
-        default=True,
+        default=None,
         help="Re-process already completed rows",
     )
 
@@ -101,23 +106,40 @@ def main():
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    if args.config:
-        config = PipelineConfig.from_json(args.config)
-    else:
-        collect_media = args.collect_media if args.collect_media != "none" else None
-        config = PipelineConfig(
-            input_file=args.input,
-            output_file=args.output,
-            sheet=args.sheet,
-            header_row=args.header_row,
-            batch_size=args.batch_size,
-            collect_specs=args.collect_specs,
-            collect_media=collect_media,
-            focus_areas=args.focus,
-            max_iterations=args.max_iterations,
-            storage_backend=args.storage,
-            skip_existing=args.skip_existing,
-        )
+    # Load base config from YAML or JSON
+    try:
+        config = PipelineConfig.load(args.config)
+    except FileNotFoundError:
+        if args.input:
+            # No config file, build from CLI args
+            config = PipelineConfig(input_file=args.input)
+        else:
+            print("Error: No config.yaml found and no --input specified.", file=sys.stderr)
+            sys.exit(1)
+
+    # Override with CLI args (only if explicitly provided)
+    if args.input:
+        config.input_file = args.input
+    if args.output:
+        config.output_file = args.output
+    if args.sheet:
+        config.sheet = args.sheet
+    if args.header_row is not None:
+        config.header_row = args.header_row
+    if args.batch_size is not None:
+        config.batch_size = args.batch_size
+    if args.collect_specs is not None:
+        config.collect_specs = args.collect_specs
+    if args.collect_media is not None:
+        config.collect_media = None if args.collect_media == "none" else args.collect_media
+    if args.focus:
+        config.focus_areas = args.focus
+    if args.max_iterations is not None:
+        config.max_iterations = args.max_iterations
+    if args.storage:
+        config.storage_backend = args.storage
+    if args.skip_existing is not None:
+        config.skip_existing = args.skip_existing
 
     runner = PipelineRunner(config)
     summary = runner.run()

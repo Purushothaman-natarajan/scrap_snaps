@@ -1,7 +1,7 @@
 """Media collection agent — handles image and video acquisition.
 
-The media collector searches, downloads, and classifies product images and videos.
-Supports 6 collect modes: images, videos, video_urls, video_frames, both, none.
+Supports 7 collect modes: images, videos, video_urls, video_frames,
+images_and_video_urls, both, none.
 
 Features:
 - Failed URL filtering: checks state["failed_media_urls"] before downloading,
@@ -49,6 +49,7 @@ from src.tools.media.video import (
 )
 from src.tools.utils.failed_urls import get_failed_url_tracker
 from src.tools.web import search_images, search_videos
+from src.tools.web.cache import get_search_cache
 
 logger = get_logger(__name__)
 
@@ -112,11 +113,12 @@ class MediaAgent(BaseAgent):
 
     def _can_collect_media(self, state: dict) -> str:
         """Check what media we should collect: images, videos, or both."""
-        return state.get("collect_media", "both")
+        return state.get("collect_media", "images_and_video_urls")
 
     def collect_images(self, state: dict) -> dict:
         """Image search -> download -> deduplicate -> classify views."""
-        if self._can_collect_media(state) == "videos":
+        collect_media = self._can_collect_media(state)
+        if collect_media == "videos":
             self.logger.info("Skipping image collection (collect_media=videos)")
             tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_images")
             return {"tasks": tasks}
@@ -150,10 +152,15 @@ class MediaAgent(BaseAgent):
 
         if results:
             # Phase 1: Download and collect all candidate paths
+            existing_urls = {img.get("url", "") for img in images_list}
             new_paths = []
             new_urls = []
             for res in results[:IMAGE_DOWNLOAD_LIMIT]:
                 img_url = res.get("url")
+
+                if img_url in existing_urls:
+                    self.logger.debug("Skipping already-collected image URL: %s", img_url)
+                    continue
 
                 if tracker.is_failed(img_url):
                     self.logger.debug("Skipping previously failed image URL: %s", img_url)
@@ -221,6 +228,7 @@ class MediaAgent(BaseAgent):
             "discovered_views": discovered_views,
             "failed_media_urls": failed_urls,
             "tasks": tasks,
+            "serpapi_budget_remaining": get_search_cache().remaining(),
         }
 
     def collect_videos(self, state: dict) -> dict:
@@ -230,6 +238,7 @@ class MediaAgent(BaseAgent):
         - "videos": full pipeline (download → extract → classify → AI select)
         - "video_urls": search only, return URLs
         - "video_frames": download + extract + classify, skip AI frame selection
+        - "images_and_video_urls": search only, return URLs (images handled separately)
         """
         collect_media = self._can_collect_media(state)
 
@@ -238,8 +247,8 @@ class MediaAgent(BaseAgent):
             tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
             return {"tasks": tasks}
 
-        # URL-only mode: search but don't download
-        if collect_media == "video_urls":
+        # URL-only modes: search but don't download
+        if collect_media in ("video_urls", "images_and_video_urls"):
             return self._collect_video_urls(state)
 
         self.logger.info("Media agent: collecting videos")
@@ -276,10 +285,15 @@ class MediaAgent(BaseAgent):
 
         images_list = state.get("images", [])
         discovered_views = state.get("discovered_views", {})
+        existing_video_urls = {v.get("url", "") for v in state.get("videos", [])}
         all_frame_paths = []
 
         for video_info in selected_videos:
             url = video_info.get("url", "")
+
+            if url in existing_video_urls:
+                self.logger.debug("Skipping already-collected video URL: %s", url)
+                continue
 
             if tracker.is_failed(url):
                 self.logger.debug("Skipping previously failed video URL: %s", url)
@@ -379,6 +393,7 @@ class MediaAgent(BaseAgent):
                 "video_frames": video_frames,
                 "failed_media_urls": failed_urls,
                 "tasks": tasks,
+                "serpapi_budget_remaining": get_search_cache().remaining(),
             }
 
         # Sync failed URLs back to state for planner awareness
@@ -389,6 +404,7 @@ class MediaAgent(BaseAgent):
             "discovered_views": discovered_views,
             "failed_media_urls": failed_urls,
             "tasks": tasks,
+            "serpapi_budget_remaining": get_search_cache().remaining(),
         }
 
     def _collect_video_urls(self, state: dict) -> dict:
@@ -434,4 +450,5 @@ class MediaAgent(BaseAgent):
         return {
             "videos": video_list,
             "tasks": tasks,
+            "serpapi_budget_remaining": get_search_cache().remaining(),
         }

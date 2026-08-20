@@ -12,7 +12,7 @@ Features:
   max_iterations (COVERAGE_PROXIMITY_RATIO, default 80%).
 - YouTube failure handling: if all video URLs failed (bot detection), does not
   force video extraction — continues with images/specs only.
-- Focus-aware evaluation: respects collect_specs, collect_media (6 modes),
+- Focus-aware evaluation: respects collect_specs, collect_media (7 modes),
   and focus areas.
 """
 
@@ -45,7 +45,7 @@ class CoverageAgent(BaseAgent):
 
     def _can_collect_media(self, state: dict) -> str:
         """Check what media we should collect: images, videos, or both."""
-        return state.get("collect_media", "both")
+        return state.get("collect_media", "images_and_video_urls")
 
     def _is_no_progress(self, state: dict) -> bool:
         """Check if no meaningful new data was collected since last coverage check.
@@ -133,6 +133,17 @@ class CoverageAgent(BaseAgent):
                 status = "complete" if videos_count >= 2 else "incomplete"
                 self.logger.info("Coverage (videos only): %d videos", videos_count)
                 updates["missing_views"] = []
+                updates["status"] = status
+                return updates
+
+            if collect_media == "images_and_video_urls":
+                status = "complete" if not missing_views else "incomplete"
+                self.logger.info(
+                    "Coverage (images + video_urls): %d/%d views found",
+                    len(required_views) - len(missing_views),
+                    len(required_views),
+                )
+                updates["missing_views"] = missing_views
                 updates["status"] = status
                 return updates
 

@@ -22,7 +22,8 @@ class ResearchState(TypedDict):
     focus_areas: list[str]
     focus_config: dict
     collect_specs: bool
-    collect_media: str  # images, videos, or both
+    collect_media: str  # 7 modes: images, videos, video_urls, video_frames,
+    # images_and_video_urls, both, none
 
     # Canonical identity
     product: dict
@@ -65,6 +66,7 @@ class ResearchState(TypedDict):
     # Cost / safety
     iterations: int
     max_iterations: int
+    serpapi_budget_remaining: int
 
     # Final
     confidence: float
@@ -81,7 +83,7 @@ def create_initial_state(
     **kwargs
 ) -> ResearchState:
     """Create a standardized initial state for the research graph."""
-    from src.config import REQUIRED_VIEWS
+    from src.config import REQUIRED_VIEWS, SERPAPI_MAX_HITS_PER_ROW
 
     state: ResearchState = {
         "query": query,
@@ -113,6 +115,7 @@ def create_initial_state(
         "_prev_views_count": 0,
         "iterations": 0,
         "max_iterations": max_iterations,
+        "serpapi_budget_remaining": SERPAPI_MAX_HITS_PER_ROW,
         "confidence": 0.0,
         "status": "started",
     }

@@ -1,12 +1,13 @@
-"""In-memory search cache with per-row SerpAPI hit limiting.
+"""In-memory search cache with per-run SerpAPI hit limiting.
 
 Provides SearchCache singleton for caching SerpAPI results within a single
 graph execution. Cache is cleared between runs (or manually via ``clear()``).
 
 Features:
 - Query normalization (lowercase, strip, sorted words) for fuzzy key matching
-- Per-row API call limit (SERPAPI_MAX_HITS_PER_ROW, default 20) prevents
-  burning through SerpAPI quota on repeated queries
+- Per-run API call limit (SERPAPI_MAX_HITS_PER_ROW, default 20) prevents
+  burning through SerpAPI quota on repeated queries. Counter is reset when
+  cache is cleared (between rows in pipeline mode, between runs in single mode).
 - Cache eviction when max size reached (SEARCH_CACHE_SIZE, default 500)
 - Stats tracking: hits, misses, api_calls, limit_reached
 """
@@ -43,8 +44,8 @@ class SearchCache:
     - Avoids retrying the same query+engine+limit combinations
       within a single graph execution.
     - Normalizes queries (lowercase, sorted words) for fuzzy key matching.
-    - Tracks actual API calls (cache misses) and enforces a per-row limit
-      to prevent burning through SerpAPI quota.
+    - Tracks actual API calls (cache misses) and enforces a per-run limit
+      to prevent burning through SerpAPI quota. Counter resets on clear().
     - Cache is cleared between runs (or manually via ``clear()``).
     """
 
@@ -99,6 +100,10 @@ class SearchCache:
     def record_api_call(self) -> None:
         """Record that a SerpAPI call was made (cache miss -> network)."""
         self._api_calls += 1
+
+    def remaining(self) -> int:
+        """Return remaining SerpAPI calls allowed in this row."""
+        return max(0, self._max_per_row - self._api_calls)
 
     def put(self, params: dict[str, Any], response: dict[str, Any]) -> None:
         """Store a response in the cache."""

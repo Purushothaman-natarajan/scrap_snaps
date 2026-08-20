@@ -58,9 +58,9 @@ def test_initial_state_structure():
         "images": [],
         "videos": [],
         "video_frames": {},
-        "required_views": ["front", "back", "side", "top"],
+        "required_views": ["front", "back", "side", "top", "360_strip"],
         "discovered_views": {},
-        "missing_views": ["front", "back", "side", "top"],
+        "missing_views": ["front", "back", "side", "top", "360_strip"],
         "tasks": [],
         "completed_tasks": [],
         "failed_tasks": [],
@@ -73,4 +73,4 @@ def test_initial_state_structure():
     assert state["query"] == "test product"
     assert state["iterations"] == 0
     assert state["confidence"] == 0.0
-    assert len(state["missing_views"]) == 4
+    assert len(state["missing_views"]) == 5

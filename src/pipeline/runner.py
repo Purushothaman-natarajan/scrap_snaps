@@ -8,6 +8,7 @@ Features:
   - Checkpoint-based crash recovery (skip processed rows on restart)
   - Streaming Excel I/O for large files
   - Results written to both Excel and database per row
+  - Pipeline config loaded from config.yaml (``pipeline:`` section)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import DATABASE_URL, RECURSION_LIMIT
+from src.config.yaml_loader import DEFAULT_CONFIG_PATH, get_pipeline_config
 from src.db import get_engine, get_session
 from src.db.utils import save_result_to_db, save_run_metrics
 from src.graph import build_graph
@@ -43,7 +45,7 @@ class PipelineConfig:
     header_row: int = 1
     batch_size: int = 10
     collect_specs: bool = True
-    collect_media: str = "both"
+    collect_media: str = "images_and_video_urls"
     focus_areas: str = ""
     max_iterations: int = 30
     storage_backend: str = "local"
@@ -52,10 +54,27 @@ class PipelineConfig:
 
     @classmethod
     def from_json(cls, path: str) -> PipelineConfig:
-        """Load config from JSON file."""
+        """Load config from JSON file (legacy, kept for backward compat)."""
         with open(path) as f:
             data = json.load(f)
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    @classmethod
+    def from_yaml(cls, path: str = DEFAULT_CONFIG_PATH) -> PipelineConfig:
+        """Load pipeline config from the ``pipeline:`` section of config.yaml."""
+        data = get_pipeline_config(path)
+        if not data:
+            raise FileNotFoundError(f"No pipeline config found in {path}")
+        # Filter to known fields
+        filtered = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**filtered)
+
+    @classmethod
+    def load(cls, path: str | None = None) -> PipelineConfig:
+        """Load config from YAML (default) or JSON (if path ends with .json)."""
+        if path and path.endswith(".json"):
+            return cls.from_json(path)
+        return cls.from_yaml(path or DEFAULT_CONFIG_PATH)
 
     def to_json(self, path: str) -> None:
         """Save config to JSON file."""

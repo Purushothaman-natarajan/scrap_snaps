@@ -28,6 +28,7 @@ USER_AGENT = settings.user_agent
 
 PLAYWRIGHT_NAV_TIMEOUT = settings.playwright_nav_timeout
 PLAYWRIGHT_SELECTOR_TIMEOUT = settings.playwright_selector_timeout
+PLAYWRIGHT_HEADLESS = settings.playwright_headless
 
 DOWNLOAD_DIR = settings.download_dir
 MAX_IMAGE_RESULTS = settings.max_image_results
@@ -39,6 +40,7 @@ IMAGE_BATCH_SIZE = settings.image_batch_size
 IMAGE_DOWNLOAD_LIMIT = settings.image_download_limit
 IMAGE_CROP_RATIO = settings.image_crop_ratio
 IMAGE_ANALYZE_CACHE_TTL = settings.image_analyze_cache_ttl
+ANALYZE_CACHE_MAX_SIZE = settings.analyze_cache_max_size
 
 # Video extraction
 VIDEO_DOWNLOAD_DIR = settings.video_download_dir
@@ -96,6 +98,7 @@ __all__ = [
     "USER_AGENT",
     "PLAYWRIGHT_NAV_TIMEOUT",
     "PLAYWRIGHT_SELECTOR_TIMEOUT",
+    "PLAYWRIGHT_HEADLESS",
     "DOWNLOAD_DIR",
     "MAX_IMAGE_RESULTS",
     "PAGE_TEXT_LIMIT",
@@ -104,6 +107,7 @@ __all__ = [
     "IMAGE_DOWNLOAD_LIMIT",
     "IMAGE_CROP_RATIO",
     "IMAGE_ANALYZE_CACHE_TTL",
+    "ANALYZE_CACHE_MAX_SIZE",
     "VIDEO_DOWNLOAD_DIR",
     "MAX_VIDEO_RESULTS",
     "VIDEO_MIN_DURATION",

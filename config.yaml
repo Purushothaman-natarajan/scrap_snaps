@@ -1,0 +1,157 @@
+# scrap_snaps — Single configuration file
+#
+# Credentials (AZURE_*, SERPAPI_KEY, DATABASE_URL) stay in .env for security.
+# Everything else lives here. Env vars can still override any value.
+
+# =============================================================================
+# Execution
+# =============================================================================
+execution:
+  max_iterations: 15       # max planner cycles before forced stop
+  recursion_limit: 200     # LangGraph limit (auto-scaled to max(MAX_ITERATIONS*8, this))
+  required_views:
+    - front          # Single image: front angle
+    - back           # Single image: back angle
+    - left           # Single image: left side angle
+    - right          # Single image: right side angle
+    - top            # Single image: top-down angle
+    - 360_strip      # Animation/flipbook strip showing product rotating through all angles
+    - multi_angle_composite  # Grid/collage combining front, side, and back views in one image
+
+# =============================================================================
+# Focus & Collection
+# =============================================================================
+focus:
+  areas:
+    - product_pages   # scrape product detail pages for specs/evidence
+    - seller_images   # scrape seller/manufacturer image galleries
+    - youtube         # search YouTube for review/demo videos
+    - specs           # search for technical specifications
+  collect_specs: true # extract structured specs (weight, dimensions, etc.)
+  # collect_media: what to download and analyze
+  #   images                — download product images, classify views via LLM Vision
+  #   videos                — download videos, extract frames, AI-select best frames
+  #   video_urls            — collect video URLs only (no download, no frame extraction)
+  #   video_frames          — extract frames from downloaded videos (no AI selection)
+  #   images_and_video_urls — images (full pipeline) + video URLs only (closest match, default)
+  #   both                  — images + videos (full pipeline)
+  #   none                  — skip all media collection (specs/verification only)
+  collect_media: images_and_video_urls
+
+# =============================================================================
+# Networking
+# =============================================================================
+networking:
+  rate_limit_interval: 1.0  # seconds between HTTP requests (per-host)
+  request_timeout: 10.0     # HTTP request timeout in seconds
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# =============================================================================
+# Playwright (JS rendering)
+# =============================================================================
+playwright:
+  nav_timeout: 30000      # page navigation timeout in ms
+  selector_timeout: 10000 # element wait timeout in ms
+  headless: true          # run browser headless (no GUI)
+
+# =============================================================================
+# Scraping
+# =============================================================================
+scraping:
+  download_dir: downloads        # base directory for downloaded files
+  max_image_results: 5          # max images to download per search query
+  page_text_limit: 5000         # max characters extracted from page text
+  max_download_size: 10485760   # max file size in bytes (10 MB)
+
+# =============================================================================
+# Image Extraction
+# =============================================================================
+image:
+  batch_size: 5               # images per batch in analyze_images_batch
+  download_limit: 2           # max images to download per search result page
+  crop_ratio: 0.7             # center-crop ratio for border removal
+  analyze_cache_ttl: 3600     # pHash analysis cache TTL in seconds (1 hour)
+  analyze_cache_max_size: 1000 # max entries in pHash analysis cache (LRU eviction)
+
+# =============================================================================
+# Video Extraction
+# =============================================================================
+video:
+  download_dir: downloads/videos  # directory for downloaded videos
+  max_results: 2                  # max videos to process per search
+  min_duration: 180               # min video length in seconds (3 min)
+  max_duration: 900               # max video length in seconds (15 min)
+  frame_interval: 5.0             # seconds between supplemental sample frames
+  max_resolution: 480             # max download resolution (p)
+  crop_frames: false              # center-crop extracted frames
+  ai_frame_selection: true        # use LLM Vision to pick best frames
+  scene_threshold: 27.0           # PySceneDetect scene change threshold
+  frame_jpeg_quality: 85          # JPEG quality for extracted frames (0-100)
+  max_frames_per_view: 2          # max frames kept per view angle
+  ai_selection_max_frames: 12     # max frames sent to LLM for AI selection
+
+# =============================================================================
+# Perceptual Hashing
+# =============================================================================
+hashing:
+  similarity_threshold: 10  # pHash Hamming distance threshold for dedup (lower = stricter)
+
+# =============================================================================
+# Coverage / Termination
+# =============================================================================
+coverage:
+  max_cycles: 10            # hard limit on coverage check cycles per row
+  no_progress_threshold: 1  # min new items per cycle to avoid no-progress detection
+  proximity_ratio: 0.8      # coverage % to trigger "almost done" termination
+
+# =============================================================================
+# Search Query Building
+# =============================================================================
+search:
+  domains_per_area: 2        # search domains per focus area per query
+  modifiers_per_area: 2      # search modifiers per focus area per query
+  queries_per_task: 2        # search queries generated per planner task
+  cache_size: 500            # max entries in in-memory search cache
+  serpapi_max_hits_per_row: 20  # max SerpAPI calls per product row
+
+# =============================================================================
+# Failed URL Tracking
+# =============================================================================
+failure:
+  url_ttl: 300  # seconds before a failed URL can be retried (5 min)
+
+# =============================================================================
+# Verification Scoring
+# =============================================================================
+verification:
+  weight_identity: 0.30  # weight for product identity/name matching
+  weight_evidence: 0.25  # weight for source evidence quality
+  weight_image: 0.30     # weight for image coverage score
+  weight_base: 0.15      # weight for base confidence floor
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: INFO
+  json: false
+  timestamp: true
+  capture: true
+  file: logs/scrap_snaps.log
+
+# =============================================================================
+# Pipeline (batch mode — used by scrap-snaps-pipeline CLI)
+# =============================================================================
+pipeline:
+  input_file: input.xlsx
+  output_file: results.xlsx
+  sheet: null
+  header_row: 1
+  batch_size: 10
+  collect_specs: true
+  collect_media: images_and_video_urls
+  focus_areas: "product_pages,seller_images"
+  max_iterations: 30
+  storage_backend: local
+  storage_base_dir: downloads
+  skip_existing: true

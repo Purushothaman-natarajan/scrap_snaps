@@ -13,6 +13,7 @@ import time
 import imagehash
 from PIL import Image as PILImage
 
+from src.config import PHASH_SIMILARITY_THRESHOLD
 from src.config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +34,7 @@ def perceptual_hash(image_path: str) -> str | None:
         return None
 
 
-def are_similar(path1: str, path2: str, threshold: int = 10) -> bool:
+def are_similar(path1: str, path2: str, threshold: int = PHASH_SIMILARITY_THRESHOLD) -> bool:
     """Check if two images are perceptually similar.
 
     Args:
@@ -49,7 +50,7 @@ def are_similar(path1: str, path2: str, threshold: int = 10) -> bool:
 
 
 def are_hashes_similar(
-    hash1: str, hash2: str, threshold: int = 10
+    hash1: str, hash2: str, threshold: int = PHASH_SIMILARITY_THRESHOLD
 ) -> bool:
     """Check if two pHash strings are within Hamming distance threshold."""
     if not hash1 or not hash2:

@@ -7,7 +7,7 @@ elapsed time). Creates workbook with styled headers on first write.
 Columns: row_index, product_name, status, confidence, specifications,
 source_urls, image_urls, image_paths, image_views, video_urls, video_paths,
 error, input_tokens, output_tokens, total_tokens, llm_calls, serpapi_calls,
-elapsed_seconds.
+elapsed_seconds, missing_views.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ RESULT_COLUMNS = [
     "llm_calls",
     "serpapi_calls",
     "elapsed_seconds",
+    "missing_views",
 ]
 
 HEADER_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -65,6 +66,7 @@ COLUMN_WIDTHS = {
     "P": 12,   # llm_calls
     "Q": 14,   # serpapi_calls
     "R": 14,   # elapsed_seconds
+    "S": 40,   # missing_views
 }
 
 
