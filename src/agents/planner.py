@@ -1,12 +1,15 @@
-"""Planner agent - LLM-powered task generation with dedup and iteration control.
+"""Planner agent — LLM-powered task generation with dedup and iteration control.
 
 The planner generates research tasks (discover, find_images, find_videos, verify_spec)
 based on current state. It includes:
 
-- Deterministic fingerprint dedup: if new tasks fingerprint matches a previous cycle,
-  returns "partial_complete" to terminate the loop.
+- Fingerprint-only dedup: deterministic MD5 fingerprint of task (type, target) pairs.
+  If the same fingerprint appears >= 2 cycles, terminates with "partial_complete".
 - Failed URL awareness: skips scheduling tasks that would retry known-failed URLs.
-- Focus-aware task selection: respects collect_specs, collect_media, and focus_areas.
+- Focus-aware task selection: respects collect_specs, collect_media (6 modes),
+  and focus_areas.
+- Configurable fallback: generates rule-based tasks when LLM fails, respecting
+  all media modes (images, videos, video_urls, video_frames, both, none).
 """
 
 from __future__ import annotations

@@ -1,4 +1,12 @@
-"""Page fetching tools - static HTTP and JS-rendered pages."""
+"""Page fetching tools — static HTTP and JS-rendered pages.
+
+Provides LangChain tools:
+  - fetch_page: static HTTP fetch with retry and rate limiting
+  - fetch_page_js: Playwright-based fetch for JS-rendered pages
+  - extract_structured_data: parse HTML tables, lists, metadata
+
+Playwright headless mode is configurable via PLAYWRIGHT_HEADLESS.
+"""
 
 from bs4 import BeautifulSoup
 from langchain_core.tools import tool

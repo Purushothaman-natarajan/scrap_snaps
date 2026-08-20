@@ -1,4 +1,18 @@
-"""Image tools - download, analyze, deduplicate."""
+"""Image tools — download, analyze, deduplicate.
+
+Provides LangChain tools:
+  - download_image: download with failure tracking (bot/403 detection)
+  - analyze_image: classify product image view type using LLM Vision
+  - analyze_images_batch: batch analyze up to IMAGE_BATCH_SIZE images per call
+  - deduplicate_images: fuzzy pHash matching with configurable threshold
+
+Features:
+  - pHash-based analysis cache (IMAGE_ANALYZE_CACHE_TTL, default 1h) avoids
+    re-analyzing the same image across cycles
+  - Dynamic view types from REQUIRED_VIEWS setting (supports custom views)
+  - Configurable IMAGE_BATCH_SIZE (default 5) for cost/quality trade-off
+  - Failed URL tracking via shared FailedURLTracker singleton
+"""
 
 import base64
 import hashlib

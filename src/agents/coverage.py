@@ -1,16 +1,19 @@
-"""Coverage agent - evaluate completeness and decide if more research is needed.
+"""Coverage agent — evaluate completeness and decide if more research is needed.
 
-The coverage agent evaluates gap analysis and routes the graph. It includes:
+The coverage agent evaluates gap analysis and routes the graph. All thresholds
+are configurable via settings.
 
-- Hard cycle limit: forces termination after MAX_COVERAGE_CYCLES coverage checks
+Features:
+- Hard cycle limit: forces termination after COVERAGE_MAX_CYCLES coverage checks
   to prevent infinite loops even when new data trickles in.
 - Threshold-based no-progress: considers "no progress" if total new items added
-  since last check is <= NO_PROGRESS_THRESHOLD (default 1).
+  since last check is <= COVERAGE_NO_PROGRESS_THRESHOLD (default 1).
 - Iterations proximity check: forces termination when iterations approaches
-  max_iterations (80% threshold).
+  max_iterations (COVERAGE_PROXIMITY_RATIO, default 80%).
 - YouTube failure handling: if all video URLs failed (bot detection), does not
   force video extraction — continues with images/specs only.
-- Focus-aware evaluation: respects collect_specs, collect_media, and focus areas.
+- Focus-aware evaluation: respects collect_specs, collect_media (6 modes),
+  and focus areas.
 """
 
 from __future__ import annotations

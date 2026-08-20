@@ -1,4 +1,11 @@
-"""TypedDict definitions for the LangGraph research agent state."""
+"""TypedDict definitions for the LangGraph research agent state.
+
+Defines ResearchState — the single TypedDict that flows through the entire
+graph. All nodes read from and write to this state.
+
+Also provides ``create_initial_state()`` which standardizes initial state
+construction across single-query and batch pipeline modes.
+"""
 
 from __future__ import annotations
 
@@ -109,8 +116,8 @@ def create_initial_state(
         "confidence": 0.0,
         "status": "started",
     }
-    
+
     # Merge any additional kwargs (like row_index)
     state.update(kwargs) # type: ignore
-    
+
     return state

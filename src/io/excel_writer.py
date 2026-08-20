@@ -1,4 +1,14 @@
-"""Streaming Excel writer for appending row results."""
+"""Streaming Excel writer for appending row results.
+
+Uses openpyxl to create/update Excel files with result columns including
+research data (specs, images, videos) and usage metrics (tokens, API calls,
+elapsed time). Creates workbook with styled headers on first write.
+
+Columns: row_index, product_name, status, confidence, specifications,
+source_urls, image_urls, image_paths, image_views, video_urls, video_paths,
+error, input_tokens, output_tokens, total_tokens, llm_calls, serpapi_calls,
+elapsed_seconds.
+"""
 
 from __future__ import annotations
 

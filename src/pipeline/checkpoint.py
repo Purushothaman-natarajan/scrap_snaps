@@ -1,12 +1,15 @@
-"""Checkpoint manager for pipeline progress tracking."""
+"""Checkpoint manager for pipeline progress tracking.
+
+Persists pipeline state (processed/failed rows, batch size, timing) to a
+JSON file so interrupted runs can resume from where they left off.
+"""
 
 from __future__ import annotations
 
 import json
 import os
 import time
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
@@ -57,7 +60,7 @@ class CheckpointManager:
         if not os.path.exists(path):
             return None
 
-        with open(path, "r") as f:
+        with open(path) as f:
             data = json.load(f)
         return CheckpointData.from_dict(data)
 

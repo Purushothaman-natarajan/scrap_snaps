@@ -1,4 +1,14 @@
-"""Result extraction from graph execution output."""
+"""Result extraction from graph execution output.
+
+Converts the final ResearchState dict into a standardized result dict
+suitable for Excel output and database persistence.
+
+Provides:
+  - ``extract_result()`` — extracts from raw final state, optionally merging
+    usage metrics (tokens, API calls, elapsed time)
+  - ``extract_result_for_row()`` — extracts for a specific Excel row,
+    falling back to row_data for product name if state is empty
+"""
 
 from __future__ import annotations
 

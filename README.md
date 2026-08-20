@@ -4,16 +4,22 @@ Autonomous product research agent powered by LangGraph. Given a product query, i
 
 ## Features
 
-- **Autonomous research loop** — Planner, discover, verify, coverage cycle with automatic termination
+- **Autonomous research loop** — Planner → discover/collect/verify → coverage cycle with automatic termination
 - **Focus-aware search** — Configurable focus areas (product pages, seller images, YouTube, specs)
-- **Configurable collection** — Collect specs only, media only, or both
-- **Search caching** — In-memory cache avoids redundant SerpAPI calls within a run
-- **Failure tracking** — 403/bot-detection failures are tracked with TTL-based retry
+- **Configurable collection** — 6 media modes: `images`, `videos`, `video_urls`, `video_frames`, `both`, `none`
+- **Custom view types** — `REQUIRED_VIEWS` is user-configurable; LLM prompts adapt dynamically
+- **Search caching** — In-memory cache with query normalization avoids redundant SerpAPI calls per run
+- **Per-row API limiting** — `SERPAPI_MAX_HITS_PER_ROW` prevents SerpAPI quota burn
+- **Failure tracking** — TTL-based `FailedURLTracker` (configurable `FAILED_URL_TTL`) shared across rows
 - **Fingerprint dedup** — Deterministic task fingerprinting prevents planner loops
-- **Batch pipeline** — Process millions of rows from Excel with checkpointing
+- **Multi-layer termination defense** — Auto-scaled recursion limit + coverage cycle limit + no-progress threshold + iteration proximity check
+- **Batch pipeline** — Process millions of rows from Excel with checkpointing and crash recovery
 - **Streaming I/O** — openpyxl read_only/write_only for large files
-- **Structured database** — SQLAlchemy models for products, sources, claims, images, videos
-- **Cost optimization** — Batch image analysis, pHash caching, shared DB engine
+- **Structured database** — SQLAlchemy models for products, sources, claims, images, videos, and usage metrics
+- **Usage tracking** — Per-run token counts (input/output), LLM calls, SerpAPI calls, and elapsed time
+- **Cost optimization** — Batch `analyze_images_batch` (up to 5 images/call), pHash caching, shared DB engine, configurable JPEG quality and video resolution
+- **Perceptual image dedup** — Fuzzy pHash matching with configurable Hamming distance threshold
+- **Configurable everything** — ~50 settings via flat env vars; no hardcoded constants
 
 ## Agent Graph Flow
 
@@ -43,8 +49,10 @@ flowchart TD
 **Termination conditions:**
 - All required views and specs collected (`complete`)
 - Max iterations reached (`max_iterations_reached`)
-- No new data collected since last check (`partial_complete`)
-- Planner fingerprint repeats 3+ cycles (`partial_complete`)
+- Coverage hard cycle limit reached (`partial_complete`)
+- No new data collected since last check — threshold-based (`partial_complete`)
+- Planner fingerprint repeats 2+ cycles (`partial_complete`)
+- Iterations proximity check (≥80% of max) (`complete`)
 
 ## State Management
 
@@ -59,7 +67,7 @@ All state flows through a single `ResearchState` TypedDict. Understanding this s
 | `focus_areas` | `list[str]` | Active focus area values |
 | `focus_config` | `dict` | FocusConfig serialized |
 | `collect_specs` | `bool` | Whether to extract specifications |
-| `collect_media` | `str` | `"images"`, `"videos"`, or `"both"` |
+| `collect_media` | `str` | `"images"`, `"videos"`, `"video_urls"`, `"video_frames"`, `"both"`, or `None` |
 | `product` | `dict` | Canonical product identity (name, brand, mpn, model) |
 | `candidates` | `list[dict]` | Product candidates from discovery |
 | `search_queries` | `list[str]` | Generated search queries |
@@ -94,7 +102,7 @@ All state flows through a single `ResearchState` TypedDict. Understanding this s
 
 Fields prefixed with `_` are runtime-only and not serialized:
 
-- `_coverage_cycles` — count of coverage check cycles (terminates at 10)
+- `_coverage_cycles` — count of coverage check cycles (terminates at `COVERAGE_MAX_CYCLES`, default 10)
 - `_prev_images` — previous cycle's image count (no-progress detection)
 - `_prev_specs` — previous cycle's spec count
 - `_prev_views_count` — previous cycle's discovered views count
@@ -148,9 +156,10 @@ scrap_snaps/
 │   ├── tools/                # Modular tool package
 │   │   ├── __init__.py
 │   │   ├── logging.py        # @log_tool_call decorator
+│   │   ├── usage.py          # UsageTracker singleton (tokens, LLM calls, timing)
 │   │   ├── web/
 │   │   │   ├── search.py     # search_web, search_images, search_videos (SerpAPI + cache)
-│   │   │   ├── cache.py      # Per-run search result cache
+│   │   │   ├── cache.py      # Per-run search result cache with query normalization
 │   │   │   ├── fetch.py      # fetch_page, fetch_page_js, extract_structured_data
 │   │   │   └── robots.py     # check_robots
 │   │   ├── media/
@@ -161,7 +170,7 @@ scrap_snaps/
 │   │   └── utils/
 │   │       ├── http.py       # rate_limit, can_fetch, http_get (smart retries)
 │   │       ├── hashing.py    # PHashCache, perceptual_hash, are_hashes_similar
-│   │       └── failed_urls.py# FailedURLTracker with TTL
+│   │       └── failed_urls.py# FailedURLTracker with configurable TTL
 │   │
 │   ├── io/                   # Excel I/O and storage
 │   │   ├── __init__.py
@@ -435,6 +444,7 @@ SQLAlchemy models store all research results:
 - **Claim** — extracted specification claims with confidence scores
 - **Image** — image URLs, local paths, view classifications
 - **Video** — video URLs, local paths, durations, scores
+- **RunMetric** — per-run usage metrics (tokens, LLM calls, SerpAPI calls, elapsed time)
 
 Default: SQLite at `research.db`. Switch to PostgreSQL:
 
@@ -466,8 +476,8 @@ Failed URLs are propagated through the state (`failed_media_urls`) so the planne
 The agent has a 3-layer defense against infinite loops:
 
 1. **Auto-scaled recursion limit** — `recursion_limit` is automatically set to `max(RECURSION_LIMIT, MAX_ITERATIONS * 8)` to ensure the graph has enough headroom
-2. **Coverage agent** — hard cycle limit (10), threshold no-progress (≤1 new item), iterations proximity (≥80% of max)
-3. **Planner fingerprint dedup** — if the planner generates identical tasks 3+ cycles in a row, terminates with `partial_complete`
+2. **Coverage agent** — hard cycle limit (`COVERAGE_MAX_CYCLES`, default 10), threshold no-progress (`COVERAGE_NO_PROGRESS_THRESHOLD`, default ≤1 new item), iterations proximity (`COVERAGE_PROXIMITY_RATIO`, default ≥80% of max)
+3. **Planner fingerprint dedup** — if the planner generates identical tasks 2+ cycles in a row, terminates with `partial_complete`
 
 ## Extending the Agent
 
@@ -627,43 +637,35 @@ The agent includes several cost optimization strategies:
 ```python
 from src.core.graph import build_graph
 from src.search.focus import get_focus_config
-from src.config import REQUIRED_VIEWS, MAX_ITERATIONS
+from src.state import create_initial_state
+from src.tools.usage import get_usage_tracker
+from src.tools.web.cache import get_search_cache
 
 graph = build_graph()
 focus = get_focus_config("product_pages,seller_images")
 
-initial_state = {
-    "query": "Sony WH-1000XM5",
-    "focus_areas": [a.value for a in focus.areas],
-    "focus_config": focus.to_dict(),
-    "collect_specs": True,
-    "collect_media": "both",
-    "product": {},
-    "candidates": [],
-    "search_queries": [],
-    "searched_queries": [],
-    "sources": [],
-    "evidence": [],
-    "specifications": {},
-    "images": [],
-    "videos": [],
-    "required_views": REQUIRED_VIEWS,
-    "discovered_views": {},
-    "missing_views": REQUIRED_VIEWS.copy(),
-    "tasks": [],
-    "completed_tasks": [],
-    "failed_tasks": [],
-    "failed_media_urls": [],
-    "previous_task_fingerprints": [],
-    "iterations": 0,
-    "max_iterations": MAX_ITERATIONS,
-    "confidence": 0.0,
-    "status": "started",
-}
+# Clear cache and tracker for this run
+get_search_cache().clear()
+tracker = get_usage_tracker()
+tracker.reset()
+tracker.start()
+
+initial_state = create_initial_state(
+    query="Sony WH-1000XM5",
+    focus_areas=[a.value for a in focus.areas],
+    focus_config=focus.to_dict(),
+    collect_specs=True,
+    collect_media="both",
+    max_iterations=15,
+)
 
 for event in graph.stream(initial_state, {"recursion_limit": 200}):
     for key, value in event.items():
         print(f"Finished: {key}")
+
+# Get usage stats
+usage = tracker.get_stats(search_cache_stats=get_search_cache().stats)
+print(f"Tokens: {usage['input_tokens']} in / {usage['output_tokens']} out")
 ```
 
 ### Configuration

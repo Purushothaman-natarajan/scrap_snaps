@@ -1,4 +1,16 @@
-"""Database models and initialization."""
+"""Database models and initialization.
+
+SQLAlchemy models:
+  - Product: canonical product identity, query, confidence, status
+  - Source: web source URLs visited during research
+  - Claim: extracted specification claims with confidence scores
+  - Image: image URLs, local paths, view classifications
+  - Video: video URLs, local paths, durations, scores
+  - RunMetric: per-run usage metrics (tokens, LLM calls, SerpAPI calls, elapsed time)
+
+Provides ``get_engine()`` (shared engine per process), ``get_session()``,
+and ``init_db()`` for table creation.
+"""
 
 from __future__ import annotations
 

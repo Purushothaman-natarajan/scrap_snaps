@@ -1,4 +1,16 @@
-"""Main entry point for the product research agent."""
+"""Main entry point for the product research agent.
+
+Single-query mode: runs the full research graph for one product query
+and writes results to JSON + SQLite database.
+
+Handles:
+  - Focus area and media mode configuration
+  - Recursion limit auto-scaling (max(RECURSION_LIMIT, MAX_ITERATIONS*8))
+  - Usage tracking (tokens, LLM calls, SerpAPI calls, elapsed time)
+  - Search cache clearing between runs
+  - Result persistence to database (Product, Source, Claim, Image, Video, RunMetric)
+  - JSON output with search cache stats and usage metrics
+"""
 
 import argparse
 import json

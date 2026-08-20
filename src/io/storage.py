@@ -1,4 +1,9 @@
-"""Storage abstraction - local filesystem with Azure Blob placeholder."""
+"""Storage abstraction — local filesystem with Azure Blob placeholder.
+
+Provides a pluggable storage backend for downloaded media. Currently
+implements local filesystem storage; Azure Blob Storage is a placeholder
+for future cloud deployments.
+"""
 
 from __future__ import annotations
 

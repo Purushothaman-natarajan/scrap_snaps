@@ -1,4 +1,14 @@
-"""Pipeline runner - batch orchestrator for processing Excel rows."""
+"""Pipeline runner — batch orchestrator for processing Excel rows.
+
+PipelineRunner processes an Excel file row by row through the research graph.
+Features:
+  - Shared DB engine created once per pipeline run (fewer connections)
+  - Per-row usage tracking (tokens, LLM calls, SerpAPI calls, elapsed time)
+  - Search cache cleared and usage tracker reset between rows
+  - Checkpoint-based crash recovery (skip processed rows on restart)
+  - Streaming Excel I/O for large files
+  - Results written to both Excel and database per row
+"""
 
 from __future__ import annotations
 

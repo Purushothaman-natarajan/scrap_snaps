@@ -1,4 +1,15 @@
-"""In-memory search cache with per-row SerpAPI hit limiting."""
+"""In-memory search cache with per-row SerpAPI hit limiting.
+
+Provides SearchCache singleton for caching SerpAPI results within a single
+graph execution. Cache is cleared between runs (or manually via ``clear()``).
+
+Features:
+- Query normalization (lowercase, strip, sorted words) for fuzzy key matching
+- Per-row API call limit (SERPAPI_MAX_HITS_PER_ROW, default 20) prevents
+  burning through SerpAPI quota on repeated queries
+- Cache eviction when max size reached (SEARCH_CACHE_SIZE, default 500)
+- Stats tracking: hits, misses, api_calls, limit_reached
+"""
 
 from __future__ import annotations
 

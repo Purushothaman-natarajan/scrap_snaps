@@ -1,4 +1,18 @@
-"""Video tools - download, extract frames, select best frames."""
+"""Video tools — download, extract frames, select best frames.
+
+Provides LangChain tools:
+  - download_video: download YouTube videos via yt-dlp with failure tracking
+  - extract_frames: scene detection (PySceneDetect) + supplemental sampling
+  - select_best_frames: AI-assisted frame selection using LLM Vision
+
+All thresholds are configurable via settings:
+  - VIDEO_SCENE_THRESHOLD (default 27.0): scene detection sensitivity
+  - VIDEO_FRAME_JPEG_QUALITY (default 85): JPEG quality of extracted frames
+  - VIDEO_MAX_FRAMES_PER_VIEW (default 2): max frames per view angle
+  - VIDEO_AI_SELECTION_MAX_FRAMES (default 12): max frames for AI selection
+  - VIDEO_FRAME_INTERVAL (default 5.0): supplemental sampling interval
+  - VIDEO_MAX_RESOLUTION (default 480): max download resolution
+"""
 
 import base64
 import json

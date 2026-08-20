@@ -1,4 +1,13 @@
-"""Web search tools using SerpAPI."""
+"""Web search tools using SerpAPI.
+
+Provides three LangChain tools:
+  - search_web: Google web search (organic results)
+  - search_images: Google image search
+  - search_videos: YouTube search via SerpAPI
+
+All tools use the per-run SearchCache for dedup and enforce
+SERPAPI_MAX_HITS_PER_ROW to prevent quota burn.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,11 @@
-"""Hashing utilities for image deduplication."""
+"""Hashing utilities for image deduplication.
+
+Provides perceptual hashing (pHash) for fuzzy image matching:
+  - PHashCache: in-memory cache avoiding recomputation for known images
+  - perceptual_hash(): compute pHash for an image file
+  - are_hashes_similar(): compare two hashes with configurable Hamming distance
+    (PHASH_SIMILARITY_THRESHOLD, default 10)
+"""
 
 import os
 import time

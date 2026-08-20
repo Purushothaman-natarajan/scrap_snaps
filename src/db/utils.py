@@ -1,4 +1,11 @@
-"""Database persistence utilities for research results."""
+"""Database persistence utilities for research results.
+
+Provides:
+  - ``save_result_to_db()`` — saves a research result dict to Product, Source,
+    Claim, Image, Video tables. Accepts an existing session or creates one.
+  - ``save_run_metrics()`` — saves usage metrics (tokens, API calls, timing)
+    to the RunMetric table linked to a Product.
+"""
 
 from __future__ import annotations
 

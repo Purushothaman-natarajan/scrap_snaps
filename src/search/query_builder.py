@@ -1,4 +1,13 @@
-"""Search query builder - generates optimized queries from focus areas."""
+"""Search query builder — generates optimized queries from focus areas.
+
+Builds search queries from focus areas with configurable:
+  - SEARCH_DOMAINS_PER_AREA (default 2): domains per site-scoped query
+  - SEARCH_MODIFIERS_PER_AREA (default 2): query modifiers per area
+  - SEARCH_QUERIES_PER_TASK (default 2): total queries per task
+
+Supports all FocusArea enum values: product_pages, seller_images,
+youtube, price_comparison, specs.
+"""
 
 from __future__ import annotations
 

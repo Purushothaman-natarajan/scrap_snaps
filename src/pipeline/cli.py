@@ -1,4 +1,9 @@
-"""CLI entry point for the batch pipeline."""
+"""CLI entry point for the batch pipeline.
+
+Parses command-line arguments for pipeline.json config or individual
+flags (--input, --batch-size, --collect-media, etc.) and runs the
+PipelineRunner.
+"""
 
 import argparse
 import json

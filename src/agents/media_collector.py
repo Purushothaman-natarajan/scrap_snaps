@@ -1,14 +1,19 @@
-"""Media collection agent - handles image and video acquisition.
+"""Media collection agent — handles image and video acquisition.
 
 The media collector searches, downloads, and classifies product images and videos.
-It includes:
+Supports 6 collect modes: images, videos, video_urls, video_frames, both, none.
 
+Features:
 - Failed URL filtering: checks state["failed_media_urls"] before downloading,
   skips URLs that previously returned 403/bot-detection.
 - Failure propagation: appends failed URLs to state so the planner knows not to
   retry them.
 - Standardized filenames: uses naming convention row_{ROW}_{product}_{view}_{hash}.
 - Focus-aware queries: uses the query builder with focus areas.
+- Configurable limits: IMAGE_DOWNLOAD_LIMIT, IMAGE_CROP_RATIO, SEARCH_QUERIES_PER_TASK,
+  VIDEO_MAX_FRAMES_PER_VIEW — all from settings.
+- Video modes: "video_urls" returns URLs only (no download), "video_frames"
+  skips AI frame selection, "videos" runs full pipeline.
 """
 
 from __future__ import annotations

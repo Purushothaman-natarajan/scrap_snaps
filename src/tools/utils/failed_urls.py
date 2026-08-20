@@ -1,8 +1,10 @@
 """Shared failed URL tracker with TTL expiry.
 
 Prevents retrying URLs that returned 403/bot-detection across all rows
-in the same process. Entries expire after TTL seconds (default: 5 minutes)
+in the same process. Entries expire after FAILED_URL_TTL seconds (default: 300s)
 to allow retries after temporary rate limits lift.
+
+Provides FailedURLTracker singleton shared across all rows in a pipeline run.
 """
 
 from __future__ import annotations

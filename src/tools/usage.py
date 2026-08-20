@@ -1,4 +1,14 @@
-"""Usage tracker - accumulates token counts and API call stats per run."""
+"""Usage tracker — accumulates token counts and API call stats per run.
+
+Provides UsageTracker singleton for tracking:
+  - Input/output/total tokens from LLM calls (AIMessage.usage_metadata)
+  - Number of LLM calls
+  - Elapsed wall-clock time
+  - Optional SerpAPI call stats from SearchCache
+
+Thread-safe (uses threading.Lock). Resets per row in batch pipeline.
+Persisted to DB via ``save_run_metrics()`` and included in JSON output.
+"""
 
 from __future__ import annotations
 
