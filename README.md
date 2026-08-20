@@ -238,10 +238,18 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `DATABASE_URL` | `sqlite:///research.db` | SQLAlchemy database connection string |
 | `MAX_ITERATIONS` | `15` | Maximum planner iterations before forced stop |
 | `RECURSION_LIMIT` | `200` | LangGraph recursion limit (auto-scaled to `max(MAX_ITERATIONS*8, this)`) |
-| `REQUIRED_VIEWS` | `front,back,side,top` | Comma-separated image views to collect |
+| `REQUIRED_VIEWS` | `front,back,left,right,top` | Comma-separated image views to collect (custom views supported) |
 | `FOCUS_AREAS` | `product_pages,seller_images,youtube,specs` | Comma-separated focus areas |
 | `COLLECT_SPECS` | `true` | Collect specifications from web pages |
-| `COLLECT_MEDIA` | `both` | What media to collect: `images`, `videos`, or `both` |
+| `COLLECT_MEDIA` | `both` | What media to collect (see below) |
+
+**`COLLECT_MEDIA` options:**
+- `images` — image search + download + classify only
+- `videos` — full video pipeline (download → extract → classify → AI select)
+- `video_urls` — YouTube search only, return URLs, no download
+- `video_frames` — download + extract frames + classify, skip AI frame selection
+- `both` — images + videos (full pipeline)
+- `none` — no media collection, specs only
 
 ### Networking
 
@@ -259,8 +267,18 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `MAX_IMAGE_RESULTS` | `5` | Max images to fetch per search |
 | `PAGE_TEXT_LIMIT` | `5000` | Max characters to extract from web pages |
 | `MAX_DOWNLOAD_SIZE` | `10485760` | Max image file size in bytes (10MB) |
+| `PLAYWRIGHT_HEADLESS` | `true` | Run browser in headless mode |
 
-### Video
+### Image Extraction
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMAGE_BATCH_SIZE` | `5` | Max images per batch LLM call |
+| `IMAGE_DOWNLOAD_LIMIT` | `2` | Max images to download per search result page |
+| `IMAGE_CROP_RATIO` | `0.7` | Center crop ratio (0.5-1.0, lower = more aggressive) |
+| `IMAGE_ANALYZE_CACHE_TTL` | `3600` | Image analysis cache TTL in seconds |
+
+### Video Extraction
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -270,8 +288,34 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `VIDEO_MAX_DURATION` | `900` | Max video duration in seconds |
 | `VIDEO_FRAME_INTERVAL` | `5.0` | Supplemental frame sampling interval (seconds) |
 | `VIDEO_MAX_RESOLUTION` | `480` | Max video resolution to download |
-| `CROP_VIDEO_FRAMES` | `false` | Crop video frames to center 70% of image |
+| `CROP_VIDEO_FRAMES` | `false` | Crop video frames to center region |
 | `AI_FRAME_SELECTION` | `true` | Use LLM Vision to select best frames |
+| `VIDEO_SCENE_THRESHOLD` | `27.0` | Scene detection sensitivity (lower = more scenes) |
+| `VIDEO_FRAME_JPEG_QUALITY` | `85` | JPEG quality of extracted frames (1-100) |
+| `VIDEO_MAX_FRAMES_PER_VIEW` | `2` | Max frames selected per view angle |
+| `VIDEO_AI_SELECTION_MAX_FRAMES` | `12` | Max frames sent to LLM Vision for AI selection |
+
+### Perceptual Hashing
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PHASH_SIMILARITY_THRESHOLD` | `10` | Hamming distance threshold for fuzzy dedup (lower = stricter) |
+
+### Coverage / Termination
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COVERAGE_MAX_CYCLES` | `10` | Hard limit on coverage cycles before forced termination |
+| `COVERAGE_NO_PROGRESS_THRESHOLD` | `1` | Items added to be considered "no progress" |
+| `COVERAGE_PROXIMITY_RATIO` | `0.8` | When to force-complete based on iteration proximity |
+
+### Search Query Building
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEARCH_DOMAINS_PER_AREA` | `2` | Domains to include in site-scoped searches |
+| `SEARCH_MODIFIERS_PER_AREA` | `2` | Query modifiers per focus area |
+| `SEARCH_QUERIES_PER_TASK` | `2` | Search queries generated per task |
 
 ### Search Cache
 

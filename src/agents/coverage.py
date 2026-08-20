@@ -16,14 +16,15 @@ The coverage agent evaluates gap analysis and routes the graph. It includes:
 from __future__ import annotations
 
 from src.agents.base import BaseAgent
+from src.config import (
+    COVERAGE_MAX_CYCLES,
+    COVERAGE_NO_PROGRESS_THRESHOLD,
+    COVERAGE_PROXIMITY_RATIO,
+)
 from src.config.logging import get_logger
 from src.search.focus import FocusArea, FocusConfig
 
 logger = get_logger(__name__)
-
-MAX_COVERAGE_CYCLES = 10
-NO_PROGRESS_THRESHOLD = 1
-ITERATIONS_PROXIMITY_RATIO = 0.8
 
 
 class CoverageAgent(BaseAgent):
@@ -66,7 +67,7 @@ class CoverageAgent(BaseAgent):
             return False
 
         new_items = total_current - total_prev
-        return new_items <= NO_PROGRESS_THRESHOLD
+        return new_items <= COVERAGE_NO_PROGRESS_THRESHOLD
 
     def _snapshot_progress(self, state: dict) -> dict:
         """Return state updates to snapshot current progress."""
@@ -99,7 +100,7 @@ class CoverageAgent(BaseAgent):
         updates["_coverage_cycles"] = coverage_cycles
 
         # Hard cycle limit - force termination
-        if coverage_cycles >= MAX_COVERAGE_CYCLES:
+        if coverage_cycles >= COVERAGE_MAX_CYCLES:
             self.logger.warning(
                 "Coverage hard limit reached (%d cycles). Forcing termination.",
                 coverage_cycles,
@@ -125,7 +126,7 @@ class CoverageAgent(BaseAgent):
 
         # No specs mode - skip spec requirements
         if not collect_specs:
-            if collect_media == "videos":
+            if collect_media in ("videos", "video_urls", "video_frames"):
                 status = "complete" if videos_count >= 2 else "incomplete"
                 self.logger.info("Coverage (videos only): %d videos", videos_count)
                 updates["missing_views"] = []
@@ -211,7 +212,7 @@ class CoverageAgent(BaseAgent):
             images_count,
             videos_count,
             coverage_cycles,
-            MAX_COVERAGE_CYCLES,
+            COVERAGE_MAX_CYCLES,
         )
 
         updates["missing_views"] = missing_views
@@ -227,7 +228,7 @@ class CoverageAgent(BaseAgent):
             # Safety check: force complete if iterations is near max
             iterations = state.get("iterations", 0)
             max_iterations = state.get("max_iterations", 30)
-            if iterations >= max_iterations * ITERATIONS_PROXIMITY_RATIO:
+            if iterations >= max_iterations * COVERAGE_PROXIMITY_RATIO:
                 self.logger.warning(
                     "Iterations proximity check: %d/%d. Forcing complete.",
                     iterations,

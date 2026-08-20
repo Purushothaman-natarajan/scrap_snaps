@@ -10,10 +10,6 @@ from src.config.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Default Hamming distance threshold for fuzzy matching.
-# Images within this distance are considered duplicates.
-HASH_SIMILARITY_THRESHOLD = 10
-
 
 def perceptual_hash(image_path: str) -> str | None:
     """Compute perceptual hash (pHash) of an image.
@@ -30,7 +26,7 @@ def perceptual_hash(image_path: str) -> str | None:
         return None
 
 
-def are_similar(path1: str, path2: str, threshold: int = HASH_SIMILARITY_THRESHOLD) -> bool:
+def are_similar(path1: str, path2: str, threshold: int = 10) -> bool:
     """Check if two images are perceptually similar.
 
     Args:
@@ -46,7 +42,7 @@ def are_similar(path1: str, path2: str, threshold: int = HASH_SIMILARITY_THRESHO
 
 
 def are_hashes_similar(
-    hash1: str, hash2: str, threshold: int = HASH_SIMILARITY_THRESHOLD
+    hash1: str, hash2: str, threshold: int = 10
 ) -> bool:
     """Check if two pHash strings are within Hamming distance threshold."""
     if not hash1 or not hash2:

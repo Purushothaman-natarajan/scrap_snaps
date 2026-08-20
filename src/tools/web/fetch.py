@@ -5,6 +5,7 @@ from langchain_core.tools import tool
 
 from src.config import (
     PAGE_TEXT_LIMIT,
+    PLAYWRIGHT_HEADLESS,
     PLAYWRIGHT_NAV_TIMEOUT,
     PLAYWRIGHT_SELECTOR_TIMEOUT,
     USER_AGENT,
@@ -56,7 +57,7 @@ def fetch_page_js(url: str, wait_selector: str = "body") -> str:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=PLAYWRIGHT_HEADLESS)
             page = browser.new_page(user_agent=USER_AGENT)
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=PLAYWRIGHT_NAV_TIMEOUT)

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+from src.config import SEARCH_DOMAINS_PER_AREA, SEARCH_MODIFIERS_PER_AREA
 from src.search.focus import FocusArea, FocusConfig
 
 
@@ -90,7 +91,7 @@ def build_queries(
         engine = FOCUS_ENGINES.get(area, "google")
 
         # Build queries with modifiers
-        for i, modifier in enumerate(modifiers[:2]):  # max 2 modifiers per area
+        for i, modifier in enumerate(modifiers[:SEARCH_MODIFIERS_PER_AREA]):
             query = _build_modifier_query(base_query, modifier)
             priority = 0.9 - (i * 0.1)  # first modifier higher priority
 
@@ -106,7 +107,7 @@ def build_queries(
 
         # For product pages and specs, also add site-scoped queries
         if area in (FocusArea.PRODUCT_PAGES, FocusArea.SPECS, FocusArea.YOUTUBE):
-            domains = FOCUS_DOMAINS.get(area, [])[:2]  # top 2 domains
+            domains = FOCUS_DOMAINS.get(area, [])[:SEARCH_DOMAINS_PER_AREA]
             for domain in domains:
                 query = _build_site_query(base_query, domain)
                 queries.append(

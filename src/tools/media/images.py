@@ -10,13 +10,18 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
-from src.config import DOWNLOAD_DIR, MAX_DOWNLOAD_SIZE
+from src.config import (
+    DOWNLOAD_DIR,
+    IMAGE_ANALYZE_CACHE_TTL,
+    IMAGE_BATCH_SIZE,
+    MAX_DOWNLOAD_SIZE,
+    REQUIRED_VIEWS,
+)
 from src.config.logging import get_logger
 from src.llm import get_vision_llm
 from src.tools.logging import log_tool_call
 from src.tools.utils.failed_urls import get_failed_url_tracker
 from src.tools.utils.hashing import (
-    HASH_SIMILARITY_THRESHOLD,
     PHashCache,
     are_hashes_similar,
     get_phash_cache,
@@ -30,14 +35,13 @@ logger = get_logger(__name__)
 # Avoids re-analyzing the same image in different cycles.
 _analyze_cache: dict[str, dict[str, Any]] = {}
 _analyze_cache_timestamps: dict[str, float] = {}
-_ANALYZE_CACHE_TTL = 3600.0  # 1 hour
 
 
 def _get_analyze_cache(phash: str) -> dict[str, Any] | None:
     """Get cached analysis result by pHash, if not expired."""
     if phash in _analyze_cache:
         ts = _analyze_cache_timestamps.get(phash, 0)
-        if time.monotonic() - ts < _ANALYZE_CACHE_TTL:
+        if time.monotonic() - ts < IMAGE_ANALYZE_CACHE_TTL:
             return _analyze_cache[phash]
         del _analyze_cache[phash]
         _analyze_cache_timestamps.pop(phash, None)
@@ -148,9 +152,10 @@ def analyze_image(image_path: str) -> dict:
         with open(image_path, "rb") as image_file:
             image_data = base64.b64encode(image_file.read()).decode("utf-8")
 
+        view_options = ", ".join(REQUIRED_VIEWS)
         prompt = (
             "Analyze this product image. Determine the primary view of the product "
-            "from this list: [front, back, left, right, top, bottom, detail, unknown]. "
+            f"from this list: [{view_options}]. "
             "Is it clearly a product image (not a person or generic scene)?\n\n"
             "Reply strictly in this JSON format:\n"
             '{"product_match": true/false, "view": "one_of_the_options", '
@@ -199,12 +204,13 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
     if not image_paths:
         return []
 
-    batch = image_paths[:5]
-    if len(image_paths) > 5:
+    batch = image_paths[:IMAGE_BATCH_SIZE]
+    if len(image_paths) > IMAGE_BATCH_SIZE:
         logger.warning(
-            "Batch limited to 5 images, %d provided — %d will be skipped",
+            "Batch limited to %d images, %d provided — %d will be skipped",
+            IMAGE_BATCH_SIZE,
             len(image_paths),
-            len(image_paths) - 5,
+            len(image_paths) - IMAGE_BATCH_SIZE,
         )
     results: list[dict | None] = [None] * len(batch)
 
@@ -232,6 +238,7 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
     try:
         llm = get_vision_llm()
 
+        view_options = ", ".join(REQUIRED_VIEWS)
         content_parts: list[dict] = []
         content_parts.append({
             "type": "text",
@@ -239,7 +246,7 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
                 f"Analyze these {len(uncached_paths)} product images.\n"
                 "For each image, determine:\n"
                 "1. Is it a product image (not a person or generic scene)?\n"
-                "2. Primary view angle: front, back, left, right, top, bottom, detail, unknown\n"
+                f"2. Primary view angle: {view_options}\n"
                 "3. Confidence (0.0-1.0)\n\n"
                 "Reply in this JSON format:\n"
                 '{"results": [{"index": 0, "product_match": true/false, '
@@ -297,7 +304,7 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
 @log_tool_call
 def deduplicate_images(
     image_paths: list[str],
-    threshold: int = HASH_SIMILARITY_THRESHOLD,
+    threshold: int = 10,
     cache: PHashCache | None = None,
 ) -> list[str]:
     """Take a list of image paths and return paths of unique images.

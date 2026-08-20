@@ -20,9 +20,13 @@ from src.config import (
     AI_FRAME_SELECTION,
     CROP_VIDEO_FRAMES,
     DOWNLOAD_DIR,
+    IMAGE_CROP_RATIO,
+    IMAGE_DOWNLOAD_LIMIT,
     MAX_IMAGE_RESULTS,
     REQUIRED_VIEWS,
+    SEARCH_QUERIES_PER_TASK,
     VIDEO_DOWNLOAD_DIR,
+    VIDEO_MAX_FRAMES_PER_VIEW,
 )
 from src.config.logging import get_logger
 from src.search.focus import FocusConfig
@@ -61,12 +65,14 @@ def _short_hash(text: str, length: int = 6) -> str:
     return hashlib.md5(text.encode()).hexdigest()[:length]
 
 
-def _crop_center(image_path: str, crop_ratio: float = 0.7) -> str | None:
+def _crop_center(image_path: str, crop_ratio: float | None = None) -> str | None:
     """Crop the center region of an image to focus on the product.
 
     Crops to the central ``crop_ratio`` of both width and height.
     Returns the cropped image path, or None on failure.
     """
+    if crop_ratio is None:
+        crop_ratio = IMAGE_CROP_RATIO
     try:
         from PIL import Image
 
@@ -124,7 +130,9 @@ class MediaAgent(BaseAgent):
                 target_view = t.get("target")
                 break
 
-        queries = build_queries(query, focus=focus, task_type="find_images", limit=2)
+        queries = build_queries(
+            query, focus=focus, task_type="find_images", limit=SEARCH_QUERIES_PER_TASK
+        )
         if queries:
             search_q = queries[0].query
         else:
@@ -139,7 +147,7 @@ class MediaAgent(BaseAgent):
             # Phase 1: Download and collect all candidate paths
             new_paths = []
             new_urls = []
-            for res in results[:2]:
+            for res in results[:IMAGE_DOWNLOAD_LIMIT]:
                 img_url = res.get("url")
 
                 if tracker.is_failed(img_url):
@@ -211,11 +219,23 @@ class MediaAgent(BaseAgent):
         }
 
     def collect_videos(self, state: dict) -> dict:
-        """Search YouTube -> download -> extract frames -> classify views."""
-        if self._can_collect_media(state) == "images":
+        """Search YouTube -> download -> extract frames -> classify views.
+
+        Handles multiple video modes:
+        - "videos": full pipeline (download → extract → classify → AI select)
+        - "video_urls": search only, return URLs
+        - "video_frames": download + extract + classify, skip AI frame selection
+        """
+        collect_media = self._can_collect_media(state)
+
+        if collect_media == "images":
             self.logger.info("Skipping video collection (collect_media=images)")
             tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
             return {"tasks": tasks}
+
+        # URL-only mode: search but don't download
+        if collect_media == "video_urls":
+            return self._collect_video_urls(state)
 
         self.logger.info("Media agent: collecting videos")
 
@@ -226,7 +246,9 @@ class MediaAgent(BaseAgent):
         tracker = get_failed_url_tracker()
         row_index = state.get("__row_index", 0)
 
-        queries = build_queries(query, focus=focus, task_type="find_videos", limit=2)
+        queries = build_queries(
+            query, focus=focus, task_type="find_videos", limit=SEARCH_QUERIES_PER_TASK
+        )
         if queries:
             search_q = queries[0].query
         else:
@@ -327,7 +349,8 @@ class MediaAgent(BaseAgent):
                     discovered_views[view_type] = []
                 discovered_views[view_type].append(frame_path)
 
-        if AI_FRAME_SELECTION and images_list:
+        use_ai_selection = AI_FRAME_SELECTION and collect_media != "video_frames"
+        if use_ai_selection and images_list:
             self.logger.info("Running AI frame selection")
             video_frame_paths = [
                 img["local_path"] for img in images_list if img.get("source") == "video"
@@ -335,7 +358,7 @@ class MediaAgent(BaseAgent):
             selected = select_best_frames.invoke({
                 "frame_paths": video_frame_paths,
                 "views": missing_views,
-                "max_per_view": 2,
+                "max_per_view": VIDEO_MAX_FRAMES_PER_VIEW,
             })
 
             video_frames: dict[str, list[str]] = {}
@@ -360,5 +383,50 @@ class MediaAgent(BaseAgent):
             "images": images_list,
             "discovered_views": discovered_views,
             "failed_media_urls": failed_urls,
+            "tasks": tasks,
+        }
+
+    def _collect_video_urls(self, state: dict) -> dict:
+        """Search YouTube for videos and return URLs only (no download/processing)."""
+        self.logger.info("Media agent: collecting video URLs only")
+
+        product = state.get("product", {})
+        query = product.get("name", state.get("query", ""))
+        focus = self._get_focus(state)
+
+        queries = build_queries(
+            query, focus=focus, task_type="find_videos", limit=SEARCH_QUERIES_PER_TASK
+        )
+        if queries:
+            search_q = queries[0].query
+        else:
+            search_q = f"{query} review angles"
+
+        videos = search_videos.invoke({"query": search_q, "limit": 10})
+
+        if not videos:
+            self.logger.warning("No videos found for query: %s", query)
+            tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
+            return {"tasks": tasks}
+
+        for v in videos:
+            v["score"] = score_video(v)
+        videos.sort(key=lambda v: v.get("score", 0), reverse=True)
+
+        from src.config import MAX_VIDEO_RESULTS
+        selected_videos = videos[:MAX_VIDEO_RESULTS]
+
+        video_list = state.get("videos", [])
+        for v in selected_videos:
+            video_list.append({
+                "url": v.get("url", ""),
+                "title": v.get("title", ""),
+                "duration": v.get("duration", 0),
+                "score": v.get("score", 0.0),
+            })
+
+        tasks = self.remove_tasks_by_type(state.get("tasks", []), "find_videos")
+        return {
+            "videos": video_list,
             "tasks": tasks,
         }

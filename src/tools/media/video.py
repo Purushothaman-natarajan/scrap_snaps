@@ -9,9 +9,13 @@ from langchain_core.tools import tool
 
 from src.config import (
     AI_FRAME_SELECTION,
+    VIDEO_AI_SELECTION_MAX_FRAMES,
     VIDEO_DOWNLOAD_DIR,
     VIDEO_FRAME_INTERVAL,
+    VIDEO_FRAME_JPEG_QUALITY,
+    VIDEO_MAX_FRAMES_PER_VIEW,
     VIDEO_MAX_RESOLUTION,
+    VIDEO_SCENE_THRESHOLD,
 )
 from src.config.logging import get_logger
 from src.llm import get_vision_llm
@@ -160,7 +164,7 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
         from scenedetect import ContentDetector, detect
 
         logger.info("Detecting scenes in: %s", video_path)
-        scenes = detect(video_path, ContentDetector(threshold=27.0))
+        scenes = detect(video_path, ContentDetector(threshold=VIDEO_SCENE_THRESHOLD))
 
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -188,7 +192,7 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
             extracted_hashes.add(h_str)
 
             frame_path = os.path.join(output_dir, f"frame_{frame_num:06d}.jpg")
-            cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, VIDEO_FRAME_JPEG_QUALITY])
             return frame_path
 
         logger.info("Found %d scenes, extracting frames", len(scenes))
@@ -225,7 +229,7 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
 @tool
 @log_tool_call
 def select_best_frames(
-    frame_paths: list[str], views: list[str], max_per_view: int = 2
+    frame_paths: list[str], views: list[str], max_per_view: int = VIDEO_MAX_FRAMES_PER_VIEW
 ) -> dict[str, list[dict]]:
     """Use LLM Vision to select the best frames for each product view angle.
 
@@ -246,7 +250,7 @@ def select_best_frames(
     try:
         llm = get_vision_llm()
 
-        sample_frames = frame_paths[:12]
+        sample_frames = frame_paths[:VIDEO_AI_SELECTION_MAX_FRAMES]
 
         content_parts = []
         content_parts.append({

@@ -118,6 +118,10 @@ class PlannerAgent(BaseAgent):
             collect_context += "\n  (Only image search, no video extraction)"
         elif collect_media == "videos":
             collect_context += "\n  (Only video extraction, no image search)"
+        elif collect_media == "video_urls":
+            collect_context += "\n  (YouTube search only — return URLs, no download)"
+        elif collect_media == "video_frames":
+            collect_context += "\n  (Download videos + extract frames, skip AI selection)"
         elif collect_media is None or collect_media == "none":
             collect_context += "\n  (No media collection — specs only)"
 
@@ -220,11 +224,12 @@ class PlannerAgent(BaseAgent):
                     "tasks": _task("find_images", state.get("missing_views")[0]),
                     "iterations": iterations,
                 }
-            elif collect_media == "videos" and state.get("missing_views"):
-                return {
-                    "tasks": _task("find_videos", state.get("missing_views")[0]),
-                    "iterations": iterations,
-                }
+            elif collect_media in ("videos", "video_urls", "video_frames"):
+                if state.get("missing_views"):
+                    return {
+                        "tasks": _task("find_videos", state.get("missing_views")[0]),
+                        "iterations": iterations,
+                    }
             elif collect_media == "both" and state.get("missing_views"):
                 return {
                     "tasks": _task("find_images", state.get("missing_views")[0]),
@@ -249,8 +254,8 @@ class PlannerAgent(BaseAgent):
         if state.get("missing_views"):
             images_count = len(state.get("images", []))
 
-            # Videos only
-            if collect_media == "videos":
+            # Videos only (or video_urls/video_frames modes)
+            if collect_media in ("videos", "video_urls", "video_frames"):
                 if failed_media_urls:
                     self.logger.warning("All video URLs failed, cannot collect videos")
                     return {"tasks": [], "iterations": iterations}
