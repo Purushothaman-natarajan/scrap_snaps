@@ -118,6 +118,8 @@ class PlannerAgent(BaseAgent):
             collect_context += "\n  (Only image search, no video extraction)"
         elif collect_media == "videos":
             collect_context += "\n  (Only video extraction, no image search)"
+        elif collect_media is None or collect_media == "none":
+            collect_context += "\n  (No media collection — specs only)"
 
         # Build failure context
         failure_context = ""
@@ -209,6 +211,8 @@ class PlannerAgent(BaseAgent):
 
         # No specs mode - skip verify_spec tasks
         if not collect_specs:
+            if collect_media is None or collect_media == "none":
+                return {"tasks": [], "iterations": iterations}
             if collect_media == "images" and state.get("missing_views"):
                 return {
                     "tasks": _task("find_images", state.get("missing_views")[0]),
@@ -227,7 +231,7 @@ class PlannerAgent(BaseAgent):
             return {"tasks": [], "iterations": iterations}
 
         # Specs mode only - no media tasks
-        if collect_media is None:
+        if collect_media is None or collect_media == "none":
             if len(state.get("specifications", {})) < 5:
                 return {
                     "tasks": _task("verify_spec", "general"),

@@ -167,7 +167,7 @@ class CoverageAgent(BaseAgent):
             return updates
 
         # Specs mode, no media
-        if collect_media is None:
+        if collect_media is None or collect_media == "none":
             status = "complete" if len(specs) >= 5 else "incomplete"
             self.logger.info("Coverage (specs only): %d specs collected", len(specs))
             updates["missing_views"] = []

@@ -44,6 +44,26 @@ def extract_result(final_state: dict[str, Any]) -> dict:
         "image_views": image_views,
         "video_urls": video_urls,
         "video_paths": video_paths,
+        "images": [
+            {
+                "url": img.get("url", ""),
+                "local_path": img.get("local_path", ""),
+                "view": img.get("view", "unknown"),
+                "confidence": img.get("confidence", 0.0),
+                "source": img.get("source", "web"),
+            }
+            for img in images
+        ],
+        "videos": [
+            {
+                "url": vid.get("url", ""),
+                "local_path": vid.get("local_path", ""),
+                "title": vid.get("title", ""),
+                "duration": vid.get("duration", 0),
+                "score": vid.get("score", 0.0),
+            }
+            for vid in videos
+        ],
         "error": _extract_error(final_state),
     }
 

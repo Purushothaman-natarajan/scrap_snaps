@@ -16,7 +16,6 @@ from src.config import (
     REQUIRED_VIEWS,
     validate_env,
 )
-from src.db import init_db
 from src.graph import build_graph
 from src.search.focus import get_focus_config
 from src.tools.web.cache import get_search_cache
@@ -53,10 +52,9 @@ def run_research(
 
     specs = collect_specs if collect_specs is not None else COLLECT_SPECS
     media = collect_media if collect_media is not None else COLLECT_MEDIA
+    if media == "none":
+        media = None
     logger.info("Collect specs: %s, collect media: %s", specs, media)
-
-    session = init_db(DATABASE_URL)
-    logger.info("Database initialized at %s", DATABASE_URL)
 
     # Ensure recursion_limit is always sufficient for max_iterations.
     # Each cycle = planner + execute + verify + coverage = 4 nodes min.
@@ -119,19 +117,18 @@ def run_research(
     )
 
     if final_state:
+        from src.pipeline.results import extract_result
+        result = extract_result(final_state)
+
         # Save to database
         try:
             from src.db.utils import save_result_to_db
-            from src.pipeline.results import extract_result
-            result = extract_result(final_state)
             save_result_to_db(result, DATABASE_URL)
         except Exception as e:
             logger.warning("Failed to save result to DB: %s", e)
 
         # Save to JSON file
         try:
-            from src.pipeline.results import extract_result
-            result = extract_result(final_state)
             result["search_cache_stats"] = cache_stats
             result["run_query"] = query
 
@@ -147,8 +144,6 @@ def run_research(
         except Exception as e:
             logger.warning("Failed to save result to JSON: %s", e)
 
-    session.close()
-
 
 def main():
     """CLI entry point."""
@@ -162,7 +157,10 @@ def main():
     )
     parser.add_argument(
         "--focus",
-        help="Comma-separated focus areas (product_pages, seller_images, youtube, price_comparison, specs)",
+        help=(
+            "Comma-separated focus areas "
+            "(product_pages, seller_images, youtube, price_comparison, specs)"
+        ),
         default=None,
     )
     parser.add_argument(

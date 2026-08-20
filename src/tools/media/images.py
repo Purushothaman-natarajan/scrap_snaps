@@ -198,6 +198,12 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
         return []
 
     batch = image_paths[:5]
+    if len(image_paths) > 5:
+        logger.warning(
+            "Batch limited to 5 images, %d provided — %d will be skipped",
+            len(image_paths),
+            len(image_paths) - 5,
+        )
     results: list[dict | None] = [None] * len(batch)
 
     uncached_indices: list[int] = []
