@@ -74,6 +74,7 @@ VERIFICATION_WEIGHTS = settings.weights
 SEARCH_CACHE_SIZE = settings.search_cache_size
 SERPAPI_MAX_HITS_PER_ROW = settings.serpapi_max_hits_per_row
 FAILED_URL_TTL = settings.failed_url_ttl
+LOG_VERBOSE = settings.log_verbose
 
 validate_env = settings.validate_required
 
@@ -131,5 +132,6 @@ __all__ = [
     "SEARCH_CACHE_SIZE",
     "SERPAPI_MAX_HITS_PER_ROW",
     "FAILED_URL_TTL",
+    "LOG_VERBOSE",
     "validate_env",
 ]

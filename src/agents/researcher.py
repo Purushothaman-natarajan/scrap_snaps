@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from src.agents.base import BaseAgent
 from src.search.focus import FocusConfig
 from src.search.query_builder import build_queries
+from src.tools.logging import log_state
 from src.tools.web import fetch_page, search_web
 from src.tools.web.cache import get_search_cache
 
@@ -48,6 +49,7 @@ class ResearchAgent(BaseAgent):
         """Extract FocusConfig from state."""
         return FocusConfig.from_dict(state.get("focus_config", {}))
 
+    @log_state("discover")
     def discover(self, state: dict) -> dict:
         """Discovery: web search -> extract product candidates."""
         self.logger.info("Research agent: discovery executing")
@@ -85,6 +87,8 @@ class ResearchAgent(BaseAgent):
                 more = search_web.invoke({"query": q})
                 results.extend(more)
 
+        self.logger.info("Discovery queries %s → %d results %s", queries_list, len(results), [r.get("url","")[:70] for r in results[:3]])
+
         llm = self.get_llm().with_structured_output(DiscoveryOutput)
         prompt = (
             f'Based on the following search results for the query "{query}", '
@@ -97,6 +101,7 @@ class ResearchAgent(BaseAgent):
             from src.tools.usage import get_usage_tracker
             get_usage_tracker().record_llm(extraction)
             candidates = [c.model_dump() for c in extraction.candidates]
+            self.logger.info("Discovery candidates %s → product %s", candidates, candidates[0] if candidates else {})
         except Exception as e:
             self.logger.warning("Discovery LLM failed: %s", e)
             candidates = [{"name": query, "canonical_name": query.upper(), "confidence": 0.5}]
@@ -113,6 +118,7 @@ class ResearchAgent(BaseAgent):
             "serpapi_budget_remaining": get_search_cache().remaining(),
         }
 
+    @log_state("evidence")
     def extract_evidence(self, state: dict) -> dict:
         """Evidence extraction: search -> fetch page -> extract specs."""
         self.logger.info("Research agent: evidence extraction executing")

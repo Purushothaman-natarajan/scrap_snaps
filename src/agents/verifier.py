@@ -5,6 +5,7 @@ from __future__ import annotations
 from src.agents.base import BaseAgent
 from src.config import VERIFICATION_WEIGHTS
 from src.config.logging import get_logger
+from src.tools.logging import log_state
 
 logger = get_logger(__name__)
 
@@ -25,10 +26,9 @@ class VerifierAgent(BaseAgent):
 
     name = "verifier"
 
+    @log_state("verifier")
     def run(self, state: dict) -> dict:
         """Evaluate evidence quality and compute completion score."""
-        self.logger.info("Verifier agent executing")
-
         evidence_list = state.get("evidence", [])
         images_list = state.get("images", [])
 
@@ -54,6 +54,13 @@ class VerifierAgent(BaseAgent):
             + evidence_conf * w["evidence"]
             + image_conf * w["image"]
             + w["base"]
+        )
+        self.logger.info(
+            "Verifier done: confidence=%.3f (identity %.2f, evidence %.2f, image %.2f)",
+            completion_score,
+            identity_conf,
+            evidence_conf,
+            image_conf,
         )
 
         return {"confidence": completion_score}

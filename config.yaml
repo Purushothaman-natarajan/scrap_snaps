@@ -138,6 +138,7 @@ logging:
   timestamp: true
   capture: true
   file: logs/scrap_snaps.log
+  verbose: false  # if true: log full tasks/candidates/claims at INFO + state deltas
 
 # =============================================================================
 # Pipeline (batch mode — used by scrap-snaps-pipeline CLI)

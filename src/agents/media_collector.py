@@ -36,6 +36,7 @@ from src.config import (
 from src.config.logging import get_logger
 from src.search.focus import FocusConfig
 from src.search.query_builder import build_queries
+from src.tools.logging import log_state
 from src.tools.media.images import (
     analyze_images_batch,
     deduplicate_images,
@@ -115,6 +116,7 @@ class MediaAgent(BaseAgent):
         """Check what media we should collect: images, videos, or both."""
         return state.get("collect_media", "images_and_video_urls")
 
+    @log_state("media.collect_images")
     def collect_images(self, state: dict) -> dict:
         """Image search -> download -> deduplicate -> classify views."""
         collect_media = self._can_collect_media(state)
@@ -222,6 +224,13 @@ class MediaAgent(BaseAgent):
 
         # Sync failed URLs back to state for planner awareness
         failed_urls = list(tracker.get_all())
+        self.logger.info(
+            "collect_images done: %d images, views %s, failed %d, budget %d",
+            len(images_list),
+            {k: len(v) for k, v in discovered_views.items()},
+            len(failed_urls),
+            get_search_cache().remaining(),
+        )
         tasks = self.remove_tasks_by_type(tasks, "find_images")
         return {
             "images": images_list,
@@ -231,6 +240,7 @@ class MediaAgent(BaseAgent):
             "serpapi_budget_remaining": get_search_cache().remaining(),
         }
 
+    @log_state("media.collect_videos")
     def collect_videos(self, state: dict) -> dict:
         """Search YouTube -> download -> extract frames -> classify views.
 

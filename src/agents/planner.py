@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from src.agents.base import BaseAgent
 from src.search.focus import FocusArea, FocusConfig
+from src.tools.logging import log_state
 
 
 class Task(BaseModel):
@@ -68,6 +69,7 @@ class PlannerAgent(BaseAgent):
         """Check what media we should collect: images, videos, or both."""
         return state.get("collect_media", "images_and_video_urls")
 
+    @log_state("planner")
     def run(self, state: dict) -> dict:
         """Execute the planner logic."""
         self.logger.info("Planner agent executing")
@@ -203,7 +205,7 @@ class PlannerAgent(BaseAgent):
 
             updated_fingerprints = previous_fingerprints + [fp]
 
-            self.logger.info("Planner generated %d tasks", len(new_tasks))
+            self.logger.info("Planner generated %d tasks: %s (fp=%s)", len(new_tasks), new_tasks, fp[:8])
             return {
                 "tasks": new_tasks,
                 "previous_task_fingerprints": updated_fingerprints,

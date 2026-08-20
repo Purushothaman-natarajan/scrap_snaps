@@ -259,8 +259,17 @@ class PipelineRunner:
         try:
             for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
                 for key, value in event.items():
+                    out_summary = {}
                     if value:
+                        for k, v in value.items():
+                            if isinstance(v, list):
+                                out_summary[k] = f"list[{len(v)}]"
+                            elif isinstance(v, dict):
+                                out_summary[k] = f"dict[{len(v)}]"
+                            else:
+                                out_summary[k] = str(v)[:80]
                         final_state.update(value)
+                    logger.debug("Row %s node %s → %s", row_data.get("__row_index", 0), key, out_summary)
         except Exception as e:
             row_idx = row_data.get("__row_index", 0)
             logger.exception("Graph stream failed for row %s: %s", row_idx, e)

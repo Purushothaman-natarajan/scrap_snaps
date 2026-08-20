@@ -37,12 +37,16 @@ def route_after_planner(state: ResearchState) -> str:
 
     first_task = tasks[0].get("type")
     if first_task == "discover":
+        logger.info("Routing planner → discover (task=%s)", tasks[0].get("target", "")[:60])
         return "discover"
     elif first_task == "verify_spec":
+        logger.info("Routing planner → evidence (task=%s)", tasks[0].get("target", "")[:60])
         return "evidence"
     elif first_task == "find_images":
+        logger.info("Routing planner → media (task=%s)", tasks[0].get("target", "")[:60])
         return "media"
     elif first_task == "find_videos":
+        logger.info("Routing planner → video_extract (task=%s)", tasks[0].get("target", "")[:60])
         return "video_extract"
 
     logger.warning("Unknown task type '%s', routing to finalize", first_task)

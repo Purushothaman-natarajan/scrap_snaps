@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     log_timestamp: bool = Field(default=True)
     log_capture: bool = Field(default=True)
     log_file: str = Field(default="logs/scrap_snaps.log")
+    log_verbose: bool = Field(default=False)
 
     # === Search Cache ===
     search_cache_size: int = Field(default=500)

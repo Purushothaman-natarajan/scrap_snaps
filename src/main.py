@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from src.config import (
     COLLECT_MEDIA,
@@ -98,15 +99,48 @@ def run_research(
     try:
         for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
             for key, value in event.items():
-                logger.info("Finished Node: %s", key)
+                out_summary = {}
+                if value:
+                    for k, v in value.items():
+                        if isinstance(v, list):
+                            out_summary[k] = f"list[{len(v)}]"
+                        elif isinstance(v, dict):
+                            out_summary[k] = f"dict[{len(v)} keys]" if len(v) > 2 else str(v)[:150]
+                        else:
+                            out_summary[k] = str(v)[:100]
+                logger.info("Finished Node: %s -> %s", key, out_summary)
                 if value:
                     final_state.update(value)
+                # State snapshot after node
+                logger.info(
+                    "State: %d images, %d specs, %d views, missing %s, status=%s, budget=%s",
+                    len(final_state.get("images", [])),
+                    len(final_state.get("specifications", {})),
+                    len(final_state.get("discovered_views", {})),
+                    final_state.get("missing_views", [])[:3],
+                    final_state.get("status", ""),
+                    final_state.get("serpapi_budget_remaining", "?"),
+                )
     except Exception as e:
         logger.exception("Graph stream failed: %s", e)
         final_state["status"] = "failed"
         final_state["error"] = str(e)
 
     logger.info("--- Research Complete ---")
+
+    # Trace dump per run when LOG_CAPTURE enabled
+    try:
+        from src.config.settings import settings as _settings
+
+        if _settings.log_capture:
+            from pathlib import Path
+
+            trace_dir = Path("logs/traces") / f"{_slugify(query)}_{int(time.time())}"
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            (trace_dir / "final_state.json").write_text(json.dumps(final_state, indent=2, default=str), encoding="utf-8")
+            logger.info("Trace dumped to %s", trace_dir)
+    except Exception as e:
+        logger.debug("Trace dump failed: %s", e)
 
     cache_stats = cache.stats
     logger.info(

@@ -26,6 +26,7 @@ from src.config import (
 )
 from src.config.logging import get_logger
 from src.search.focus import FocusArea, FocusConfig
+from src.tools.logging import log_state
 
 logger = get_logger(__name__)
 
@@ -80,6 +81,7 @@ class CoverageAgent(BaseAgent):
             "_prev_views_count": len(state.get("discovered_views", {})),
         }
 
+    @log_state("coverage")
     def analyze(self, state: dict) -> dict:
         """Evaluate what is missing based on collect mode."""
         self.logger.info("Coverage agent executing")

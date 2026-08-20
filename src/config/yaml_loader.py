@@ -106,6 +106,7 @@ _YAML_TO_SETTINGS: dict[tuple[str | None, str], str] = {
     ("logging", "timestamp"): "LOG_TIMESTAMP",
     ("logging", "capture"): "LOG_CAPTURE",
     ("logging", "file"): "LOG_FILE",
+    ("logging", "verbose"): "LOG_VERBOSE",
 }
 
 
