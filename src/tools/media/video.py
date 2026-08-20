@@ -275,6 +275,8 @@ def select_best_frames(
 
         message = HumanMessage(content=content_parts)
         response = llm.invoke([message])
+        from src.tools.usage import get_usage_tracker
+        get_usage_tracker().record_llm(response)
 
         text = response.content.strip()
         if "```json" in text:

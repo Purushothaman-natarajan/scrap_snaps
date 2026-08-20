@@ -62,3 +62,55 @@ class ResearchState(TypedDict):
     # Final
     confidence: float
     status: str
+
+
+def create_initial_state(
+    query: str,
+    focus_areas: list[str],
+    focus_config: dict,
+    collect_specs: bool,
+    collect_media: str | None,
+    max_iterations: int,
+    **kwargs
+) -> ResearchState:
+    """Create a standardized initial state for the research graph."""
+    from src.config import REQUIRED_VIEWS
+
+    state: ResearchState = {
+        "query": query,
+        "focus_areas": focus_areas,
+        "focus_config": focus_config,
+        "collect_specs": collect_specs,
+        "collect_media": collect_media,
+        "product": {},
+        "candidates": [],
+        "search_queries": [],
+        "searched_queries": [],
+        "sources": [],
+        "evidence": [],
+        "specifications": {},
+        "images": [],
+        "videos": [],
+        "video_frames": {},
+        "required_views": REQUIRED_VIEWS.copy(),
+        "discovered_views": {},
+        "missing_views": REQUIRED_VIEWS.copy(),
+        "tasks": [],
+        "completed_tasks": [],
+        "failed_tasks": [],
+        "failed_media_urls": [],
+        "previous_task_fingerprints": [],
+        "_coverage_cycles": 0,
+        "_prev_images_count": 0,
+        "_prev_specs_count": 0,
+        "_prev_views_count": 0,
+        "iterations": 0,
+        "max_iterations": max_iterations,
+        "confidence": 0.0,
+        "status": "started",
+    }
+    
+    # Merge any additional kwargs (like row_index)
+    state.update(kwargs) # type: ignore
+    
+    return state

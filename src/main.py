@@ -13,11 +13,14 @@ from src.config import (
     FOCUS_AREAS,
     MAX_ITERATIONS,
     RECURSION_LIMIT,
-    REQUIRED_VIEWS,
     validate_env,
 )
+from src.db.utils import save_result_to_db, save_run_metrics
 from src.graph import build_graph
+from src.pipeline.results import extract_result
 from src.search.focus import get_focus_config
+from src.state import create_initial_state
+from src.tools.usage import get_usage_tracker
 from src.tools.web.cache import get_search_cache
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,10 @@ def run_research(
     cache = get_search_cache()
     cache.clear()
 
+    tracker = get_usage_tracker()
+    tracker.reset()
+    tracker.start()
+
     focus_raw = focus_areas or FOCUS_AREAS
     focus = get_focus_config(focus_raw)
     if focus.areas:
@@ -65,38 +72,14 @@ def run_research(
 
     graph = build_graph()
 
-    initial_state = {
-        "query": query,
-        "focus_areas": [a.value for a in focus.areas],
-        "focus_config": focus.to_dict(),
-        "collect_specs": specs,
-        "collect_media": media,
-        "product": {},
-        "candidates": [],
-        "search_queries": [],
-        "searched_queries": [],
-        "sources": [],
-        "evidence": [],
-        "specifications": {},
-        "images": [],
-        "videos": [],
-        "required_views": REQUIRED_VIEWS,
-        "discovered_views": {},
-        "missing_views": REQUIRED_VIEWS.copy(),
-        "tasks": [],
-        "completed_tasks": [],
-        "failed_tasks": [],
-        "failed_media_urls": [],
-        "previous_task_fingerprints": [],
-        "iterations": 0,
-        "max_iterations": MAX_ITERATIONS,
-        "_coverage_cycles": 0,
-        "_prev_images_count": 0,
-        "_prev_specs_count": 0,
-        "_prev_views_count": 0,
-        "confidence": 0.0,
-        "status": "started",
-    }
+    initial_state = create_initial_state(
+        query=query,
+        focus_areas=[a.value for a in focus.areas],
+        focus_config=focus.to_dict(),
+        collect_specs=specs,
+        collect_media=media,
+        max_iterations=MAX_ITERATIONS,
+    )
 
     logger.info("--- Execution Trace ---")
     final_state = None
@@ -107,7 +90,6 @@ def run_research(
 
     logger.info("--- Research Complete ---")
 
-    # Log search cache stats
     cache_stats = cache.stats
     logger.info(
         "Search cache stats: %d API calls, %d cache hits, %d cache misses",
@@ -117,13 +99,15 @@ def run_research(
     )
 
     if final_state:
-        from src.pipeline.results import extract_result
-        result = extract_result(final_state)
+        usage_metrics = tracker.get_stats(search_cache_stats=cache_stats)
+
+        result = extract_result(final_state, usage_metrics=usage_metrics)
 
         # Save to database
         try:
-            from src.db.utils import save_result_to_db
-            save_result_to_db(result, DATABASE_URL)
+            product_id = save_result_to_db(result, DATABASE_URL)
+            if product_id:
+                save_run_metrics(product_id, usage_metrics, DATABASE_URL)
         except Exception as e:
             logger.warning("Failed to save result to DB: %s", e)
 
@@ -133,7 +117,7 @@ def run_research(
             result["run_query"] = query
 
             if not output_path:
-                slug = _slugify(query)
+                slug = _slugify(query) or "unnamed_run"
                 output_dir = "results"
                 os.makedirs(output_dir, exist_ok=True)
                 output_path = os.path.join(output_dir, f"{slug}.json")
@@ -143,6 +127,14 @@ def run_research(
             logger.info("Results saved to %s", output_path)
         except Exception as e:
             logger.warning("Failed to save result to JSON: %s", e)
+
+        logger.info(
+            "Usage: %d input tokens, %d output tokens, %d LLM calls, %d SerpAPI calls",
+            usage_metrics["input_tokens"],
+            usage_metrics["output_tokens"],
+            usage_metrics["llm_calls"],
+            usage_metrics.get("serpapi_calls", 0),
+        )
 
 
 def main():

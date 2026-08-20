@@ -25,6 +25,12 @@ RESULT_COLUMNS = [
     "video_urls",
     "video_paths",
     "error",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "llm_calls",
+    "serpapi_calls",
+    "elapsed_seconds",
 ]
 
 HEADER_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -43,6 +49,12 @@ COLUMN_WIDTHS = {
     "J": 60,   # video_urls
     "K": 60,   # video_paths
     "L": 40,   # error
+    "M": 14,   # input_tokens
+    "N": 14,   # output_tokens
+    "O": 14,   # total_tokens
+    "P": 12,   # llm_calls
+    "Q": 14,   # serpapi_calls
+    "R": 14,   # elapsed_seconds
 }
 
 

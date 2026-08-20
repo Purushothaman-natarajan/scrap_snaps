@@ -163,6 +163,8 @@ class PlannerAgent(BaseAgent):
 
         try:
             result = llm.invoke(prompt)
+            from src.tools.usage import get_usage_tracker
+            get_usage_tracker().record_llm(result)
             new_tasks = [t.model_dump() for t in result.tasks]
 
             # Compute fingerprint for this cycle

@@ -39,6 +39,7 @@ class Product(Base):
     claims = relationship("Claim", back_populates="product", cascade="all, delete-orphan")
     images = relationship("Image", back_populates="product", cascade="all, delete-orphan")
     videos = relationship("Video", back_populates="product", cascade="all, delete-orphan")
+    run_metrics = relationship("RunMetric", back_populates="product", cascade="all, delete-orphan")
 
 
 class Source(Base):
@@ -105,6 +106,26 @@ class Video(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     product = relationship("Product", back_populates="videos")
+
+
+class RunMetric(Base):
+    """Usage metrics for a single research run."""
+
+    __tablename__ = "run_metrics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    llm_calls = Column(Integer, default=0)
+    serpapi_calls = Column(Integer, default=0)
+    serpapi_hits = Column(Integer, default=0)
+    serpapi_misses = Column(Integer, default=0)
+    elapsed_seconds = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    product = relationship("Product", back_populates="run_metrics")
 
 
 def get_engine(database_url: str):

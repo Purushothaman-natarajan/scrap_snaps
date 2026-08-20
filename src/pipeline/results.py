@@ -5,11 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 
-def extract_result(final_state: dict[str, Any]) -> dict:
+def extract_result(
+    final_state: dict[str, Any],
+    usage_metrics: dict | None = None,
+) -> dict:
     """Extract structured result from the final graph state.
 
     Args:
         final_state: The state dict after graph execution completes.
+        usage_metrics: Optional usage metrics dict to include in output.
 
     Returns:
         Dict with standardized result fields for Excel output.
@@ -65,20 +69,26 @@ def extract_result(final_state: dict[str, Any]) -> dict:
             for vid in videos
         ],
         "error": _extract_error(final_state),
+        **({"usage_metrics": usage_metrics} if usage_metrics else {}),
     }
 
 
-def extract_result_for_row(row_data: dict, final_state: dict[str, Any]) -> dict:
+def extract_result_for_row(
+    row_data: dict,
+    final_state: dict[str, Any],
+    usage_metrics: dict | None = None,
+) -> dict:
     """Extract result for a specific row from Excel input.
 
     Args:
         row_data: The original row dict from Excel.
         final_state: The state dict after graph execution.
+        usage_metrics: Optional usage metrics dict to include in output.
 
     Returns:
         Dict with standardized result fields.
     """
-    result = extract_result(final_state)
+    result = extract_result(final_state, usage_metrics=usage_metrics)
     result["row_index"] = row_data.get("__row_index", result["row_index"])
 
     if not result["product_name"]:

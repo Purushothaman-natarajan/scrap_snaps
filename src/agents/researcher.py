@@ -79,6 +79,8 @@ class ResearchAgent(BaseAgent):
 
         try:
             extraction = llm.invoke(prompt)
+            from src.tools.usage import get_usage_tracker
+            get_usage_tracker().record_llm(extraction)
             candidates = [c.model_dump() for c in extraction.candidates]
         except Exception as e:
             self.logger.warning("Discovery LLM failed: %s", e)
@@ -123,6 +125,8 @@ class ResearchAgent(BaseAgent):
 
             try:
                 extraction = llm.invoke(prompt)
+                from src.tools.usage import get_usage_tracker
+                get_usage_tracker().record_llm(extraction)
                 for c in extraction.claims:
                     claim_dict = c.model_dump()
                     claim_dict["source"] = url

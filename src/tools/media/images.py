@@ -165,6 +165,8 @@ def analyze_image(image_path: str) -> dict:
         )
 
         response = llm.invoke([message])
+        from src.tools.usage import get_usage_tracker
+        get_usage_tracker().record_llm(response)
         data = _parse_analysis_text(response.content.strip())
 
         if data is None:
@@ -255,6 +257,8 @@ def analyze_images_batch(image_paths: list[str]) -> list[dict]:
 
         message = HumanMessage(content=content_parts)
         response = llm.invoke([message])
+        from src.tools.usage import get_usage_tracker
+        get_usage_tracker().record_llm(response)
 
         text = response.content.strip()
         if "```json" in text:

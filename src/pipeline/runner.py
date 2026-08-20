@@ -8,9 +8,17 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.config import DATABASE_URL, RECURSION_LIMIT
+from src.db import get_engine, get_session
+from src.db.utils import save_result_to_db, save_run_metrics
+from src.graph import build_graph
 from src.io import get_storage, read_excel_rows, write_row_result
 from src.pipeline.checkpoint import CheckpointData, CheckpointManager
 from src.pipeline.results import extract_result_for_row
+from src.search.focus import get_focus_config
+from src.state import create_initial_state
+from src.tools.usage import get_usage_tracker
+from src.tools.web.cache import get_search_cache
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +99,6 @@ class PipelineRunner:
         }
 
         # Create shared DB engine once for all rows
-        from src.config import DATABASE_URL
-        from src.db import get_engine
         db_engine = get_engine(DATABASE_URL)
 
         for batch in read_excel_rows(
@@ -108,15 +114,30 @@ class PipelineRunner:
                     summary["skipped"] += 1
                     continue
 
+                # Clear cache and reset tracker for each new product row
+                get_search_cache().clear()
+                tracker = get_usage_tracker()
+                tracker.reset()
+                tracker.start()
+
                 try:
                     result = self._process_row(row_data, config, db_engine=db_engine)
+
+                    cache_stats = get_search_cache().stats
+                    usage_metrics = tracker.get_stats(search_cache_stats=cache_stats)
+                    result["usage_metrics"] = usage_metrics
+                    # Flatten metrics into result for Excel column mapping
+                    for k, v in usage_metrics.items():
+                        result[k] = v
+
                     write_row_result(config.output_file, result)
 
-                    # Save to database
+                    # Save to database using a row-specific session
                     try:
-                        from src.config import DATABASE_URL
-                        from src.db.utils import save_result_to_db
-                        save_result_to_db(result, DATABASE_URL)
+                        session = get_session(db_engine)
+                        product_id = save_result_to_db(result, session=session)
+                        if product_id:
+                            save_run_metrics(product_id, usage_metrics, session=session)
                     except Exception as db_err:
                         logger.warning("Failed to save to DB for row %d: %s", row_idx, db_err)
 
@@ -155,11 +176,6 @@ class PipelineRunner:
 
     def _process_row(self, row_data: dict, config: PipelineConfig, db_engine=None) -> dict:
         """Process a single row through the research graph."""
-        from src.config import DATABASE_URL, RECURSION_LIMIT, REQUIRED_VIEWS
-        from src.db import get_engine
-        from src.graph import build_graph
-        from src.search.focus import get_focus_config
-
         query = self._extract_query(row_data)
         if not query:
             return {
@@ -175,38 +191,19 @@ class PipelineRunner:
             db_engine = get_engine(DATABASE_URL)
         graph = build_graph()
 
-        initial_state = {
-            "query": query,
-            "__row_index": row_data.get("__row_index", 0),
-            "focus_areas": [a.value for a in focus.areas],
-            "focus_config": focus.to_dict(),
-            "collect_specs": config.collect_specs,
-            "collect_media": config.collect_media,
-            "product": {},
-            "candidates": [],
-            "search_queries": [],
-            "searched_queries": [],
-            "sources": [],
-            "evidence": [],
-            "specifications": {},
-            "images": [],
-            "videos": [],
-            "required_views": REQUIRED_VIEWS,
-            "discovered_views": {},
-            "missing_views": REQUIRED_VIEWS.copy(),
-            "tasks": [],
-            "completed_tasks": [],
-            "failed_tasks": [],
-            "failed_media_urls": [],
-            "previous_task_fingerprints": [],
-            "iterations": 0,
-            "max_iterations": config.max_iterations,
-            "confidence": 0.0,
-            "status": "started",
-        }
+        initial_state = create_initial_state(
+            query=query,
+            __row_index=row_data.get("__row_index", 0),
+            focus_areas=[a.value for a in focus.areas],
+            focus_config=focus.to_dict(),
+            collect_specs=config.collect_specs,
+            collect_media=config.collect_media,
+            max_iterations=config.max_iterations,
+        )
 
         final_state = None
-        for event in graph.stream(initial_state, {"recursion_limit": RECURSION_LIMIT}):
+        safe_recursion_limit = max(RECURSION_LIMIT, config.max_iterations * 8)
+        for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
             for key, value in event.items():
                 final_state = value
 
