@@ -2,41 +2,137 @@
 
 Autonomous product research agent powered by LangGraph. Given a product query, it discovers the product, extracts technical specifications, collects images from multiple views, and builds a verified evidence dossier. Supports both single-query mode and batch processing from Excel files.
 
-## Features
+## Key Features
 
 - **Autonomous research loop** — Planner → discover/collect/verify → coverage cycle with automatic termination
 - **Focus-aware search** — Configurable focus areas (product pages, seller images, YouTube, specs)
-- **Configurable collection** — 7 media modes: `images`, `videos`, `video_urls`, `video_frames`, `images_and_video_urls`, `both`, `none`
-- **Custom view types** — `REQUIRED_VIEWS` is user-configurable; LLM prompts adapt dynamically. Includes standard angles (`front`, `back`, `left`, `right`, `top`) plus composite views (`360_strip`, `multi_angle_composite`)
+- **Custom view types** — `REQUIRED_VIEWS` is user-configurable; LLM prompts adapt dynamically
 - **Search caching** — In-memory cache with query normalization avoids redundant SerpAPI calls per run
-- **Per-row API limiting** — `SERPAPI_MAX_HITS_PER_ROW` prevents SerpAPI quota burn
-- **Failure tracking** — TTL-based `FailedURLTracker` (configurable `FAILED_URL_TTL`) shared across rows
+- **Perceptual image dedup** — Fuzzy pHash matching with configurable Hamming distance threshold
 - **Fingerprint dedup** — Deterministic task fingerprinting prevents planner loops
-- **Multi-layer termination defense** — Auto-scaled recursion limit + coverage cycle limit + no-progress threshold + iteration proximity check
+- **Multi-layer termination defense** — Recursion limit + coverage cycle limit + no-progress threshold + iteration proximity check
 - **Batch pipeline** — Process millions of rows from Excel with checkpointing and crash recovery
-- **Streaming I/O** — openpyxl read_only/write_only for large files
 - **Structured database** — SQLAlchemy models for products, sources, claims, images, videos, and usage metrics
 - **Usage tracking** — Per-run token counts (input/output), LLM calls, SerpAPI calls, and elapsed time
-- **Cost optimization** — Batch `analyze_images_batch` (up to 5 images/call), pHash caching, shared DB engine, configurable JPEG quality and video resolution
-- **Perceptual image dedup** — Fuzzy pHash matching with configurable Hamming distance threshold
-- **Configurable everything** — ~50 settings via flat env vars; no hardcoded constants
+- **Cost optimization** — Batch `analyze_images_batch` (up to 5 images/call), pHash caching, shared DB engine
+- **Configurable everything** — ~50 settings via flat env vars or config.yaml; no hardcoded constants
 
-## Agent Graph Flow
+## Quick Start
+
+```bash
+git clone https://github.com/Purushothaman-natarajan/scrap_snaps.git
+cd scrap_snaps && uv sync && playwright install chromium
+cp .env.example .env  # add your API keys
+scrap-snaps "Sony WH-1000XM5"
+```
+
+## Architecture
+
+### System Context
+
+```mermaid
+flowchart LR
+    subgraph Input
+        CLI["CLI Query"]
+        Excel["Excel Batch"]
+    end
+    
+    subgraph "scrap-snaps"
+        Agent["Research Agent"]
+        Pipeline["Batch Pipeline"]
+    end
+    
+    subgraph External
+        SerpAPI["SerpAPI\n(Google Search)"]
+        LLM["Azure LLM\n(GPT-4 Vision)"]
+        Web["HTTP / Playwright\n(Web Pages)"]
+        YT["YouTube\n(yt-dlp)"]
+        FS["Filesystem\n(Images/Videos)"]
+    end
+    
+    subgraph Output
+        JSON["JSON Result"]
+        ExcelOut["Excel Output"]
+        DB["SQLite / PostgreSQL"]
+    end
+    
+    CLI --> Agent
+    Excel --> Pipeline
+    Pipeline --> Agent
+    Agent --> SerpAPI
+    Agent --> LLM
+    Agent --> Web
+    Agent --> YT
+    Agent --> FS
+    Agent --> JSON
+    Pipeline --> ExcelOut
+    Pipeline --> DB
+    Agent --> DB
+```
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "State"
+        S["ResearchState\n(TypedDict)"]
+    end
+    
+    subgraph "Planner"
+        P["planner.py\nLLM → tasks"]
+    end
+    
+    subgraph "Workers"
+        D["discover\nsearch_web → candidates"]
+        EV["evidence\nsearch_web+fetch → specs"]
+        M["media\nsearch_images → images"]
+        V["video_extract\nsearch_videos → frames"]
+    end
+    
+    subgraph "Assessment"
+        VF["verify\nweighted scoring"]
+        C["coverage\ngap analysis"]
+    end
+    
+    S -->|"iterations, missing_views,\nprevious_task_fingerprints"| P
+    P -->|"tasks"| D & EV & M & V
+    D -->|"product, sources,\ncandidates"| S
+    EV -->|"evidence,\nspecifications"| S
+    M -->|"images,\ndiscovered_views"| S
+    V -->|"images, videos,\ndiscovered_views"| S
+    S -->|"evidence, images,\nproduct.confidence"| VF
+    VF -->|"confidence"| S
+    S -->|"discovered_views,\nspecifications, iterations"| C
+    C -->|"missing_views,\nstatus → complete/incomplete"| S
+    C -.->|"incomplete"| P
+    C -.->|"complete"| FIN["finalize"]
+    
+    P -.->|"LLM API"| LLM["Azure LLM"]
+    D -.->|"SerpAPI"| API["SerpAPI"]
+    EV -.->|"SerpAPI + HTTP"| API & WEB["Web"]
+    M -.->|"SerpAPI + HTTP"| API & WEB
+    V -.->|"SerpAPI + yt-dlp"| API & YT["YouTube"]
+    M & V -.->|"LLM Vision"| LLM
+    M & V -.->|"downloads/"| FS["Filesystem"]
+    FIN -.->|"save_result_to_db()"| DB["Database"]
+```
+
+### Graph Topology
 
 ```mermaid
 flowchart TD
     Start(["START"]) --> PLANNER["Planner"]
 
-    PLANNER -- "discover" --> DISCOVER["Discovery\nsearch_web -> extract candidates"]
-    PLANNER -- "verify_spec" --> EVIDENCE["Evidence\nsearch_web -> fetch_page -> extract specs"]
-    PLANNER -- "find_images" --> MEDIA_COLLECTOR["Media\nsearch_images -> download -> classify"]
-    PLANNER -- "find_videos" --> VIDEO_EXTRACTOR["Video\nsearch_videos -> download -> extract frames"]
+    PLANNER -- "discover" --> DISCOVER["Discovery\nsearch_web → extract candidates"]
+    PLANNER -- "verify_spec" --> EVIDENCE["Evidence\nsearch_web → fetch_page → extract specs"]
+    PLANNER -- "find_images" --> MEDIA["Media\nsearch_images → download → classify"]
+    PLANNER -- "find_videos" --> VIDEO["Video\nsearch_videos → download → extract frames"]
     PLANNER -- "no tasks" --> FINALIZE["Finalize"]
 
     DISCOVER --> VERIFY
     EVIDENCE --> VERIFY
-    MEDIA_COLLECTOR --> VERIFY
-    VIDEO_EXTRACTOR --> VERIFY
+    MEDIA --> VERIFY
+    VIDEO --> VERIFY
 
     VERIFY["Verify\nscore confidence"] --> COVERAGE["Coverage\ngap analysis"]
 
@@ -47,6 +143,7 @@ flowchart TD
 ```
 
 **Termination conditions:**
+
 - All required views and specs collected (`complete`)
 - Max iterations reached (`max_iterations_reached`)
 - Coverage hard cycle limit reached (`partial_complete`)
@@ -54,11 +151,11 @@ flowchart TD
 - Planner fingerprint repeats 2+ cycles (`partial_complete`)
 - Iterations proximity check (≥80% of max) (`complete`)
 
-## State Management
+### State Management
 
 All state flows through a single `ResearchState` TypedDict. Understanding this state is key to extending the system.
 
-### ResearchState Fields
+#### ResearchState Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -90,7 +187,7 @@ All state flows through a single `ResearchState` TypedDict. Understanding this s
 | `confidence` | `float` | Overall verification confidence |
 | `status` | `str` | `started`, `complete`, `partial_complete`, `failed` |
 
-### State Flow
+#### State Flow
 
 1. **Initial state** — CLI/pipeline builds initial state dict
 2. **Planner** — reads `product`, `missing_views`, `iterations`, `previous_task_fingerprints` → writes `tasks`
@@ -98,7 +195,7 @@ All state flows through a single `ResearchState` TypedDict. Understanding this s
 4. **Verify** — reads all data → writes `confidence`, `status`
 5. **Coverage** — reads `confidence`, `discovered_views`, `iterations` → routes back to planner or finalize
 
-### Internal State Fields
+#### Internal State Fields
 
 Fields prefixed with `_` are runtime-only and not serialized:
 
@@ -106,127 +203,6 @@ Fields prefixed with `_` are runtime-only and not serialized:
 - `_prev_images` — previous cycle's image count (no-progress detection)
 - `_prev_specs` — previous cycle's spec count
 - `_prev_views_count` — previous cycle's discovered views count
-
-## Project Structure
-
-```
-scrap_snaps/
-├── .env.example              # Environment variable template
-├── .gitignore
-├── pyproject.toml            # Package config (hatchling build)
-├── uv.lock                   # Reproducible dependency lock
-│
-├── src/
-│   ├── __init__.py
-│   ├── main.py               # CLI entry point (single query)
-│   ├── llm.py                # Corporate Azure/OpenAI LLM client
-│   ├── state.py              # ResearchState TypedDict definition
-│   ├── graph.py              # Backward-compatible graph re-export
-│   │
-│   ├── config/               # Configuration package
-│   │   ├── __init__.py       # Backward-compatible exports
-│   │   ├── settings.py       # Pydantic Settings (flat env vars)
-│   │   └── logging.py        # Structured logging (structlog)
-│   │
-│   ├── core/                 # Core infrastructure
-│   │   ├── __init__.py
-│   │   ├── graph.py          # LangGraph state machine builder
-│   │   └── registry.py       # Plugin registry for nodes/tools/agents
-│   │
-│   ├── agents/               # Business logic classes
-│   │   ├── __init__.py
-│   │   ├── base.py           # BaseAgent with common utilities
-│   │   ├── planner.py        # PlannerAgent (task generation + fingerprint dedup)
-│   │   ├── researcher.py     # ResearchAgent (discovery + evidence)
-│   │   ├── media_collector.py# MediaAgent (images + videos + failure tracking)
-│   │   ├── verifier.py       # VerificationAgent (scoring)
-│   │   └── coverage.py       # CoverageAgent (gap analysis + termination defense)
-│   │
-│   ├── nodes/                # Thin LangGraph node wrappers
-│   │   ├── __init__.py
-│   │   ├── planner.py        # -> PlannerAgent
-│   │   ├── discovery.py      # -> ResearchAgent
-│   │   ├── evidence.py       # -> ResearchAgent
-│   │   ├── media.py          # -> MediaAgent
-│   │   ├── video_extract.py  # -> MediaAgent
-│   │   ├── verification.py   # -> VerifierAgent
-│   │   └── coverage.py       # -> CoverageAgent
-│   │
-│   ├── tools/                # Modular tool package
-│   │   ├── __init__.py
-│   │   ├── logging.py        # @log_tool_call decorator
-│   │   ├── usage.py          # UsageTracker singleton (tokens, LLM calls, timing)
-│   │   ├── web/
-│   │   │   ├── search.py     # search_web, search_images, search_videos (SerpAPI + cache)
-│   │   │   ├── cache.py      # Per-run search result cache with query normalization
-│   │   │   ├── fetch.py      # fetch_page, fetch_page_js, extract_structured_data
-│   │   │   └── robots.py     # check_robots
-│   │   ├── media/
-│   │   │   ├── images.py     # download_image, analyze_image(s_batch), deduplicate_images
-│   │   │   └── video.py      # download_video, extract_frames, select_best_frames
-│   │   ├── db/
-│   │   │   └── evidence.py   # save_evidence
-│   │   └── utils/
-│   │       ├── http.py       # rate_limit, can_fetch, http_get (smart retries)
-│   │       ├── hashing.py    # PHashCache, perceptual_hash, are_hashes_similar
-│   │       └── failed_urls.py# FailedURLTracker with configurable TTL
-│   │
-│   ├── io/                   # Excel I/O and storage
-│   │   ├── __init__.py
-│   │   ├── naming.py         # File naming: row_{ROW}_{product}_{view}_{hash}.{ext}
-│   │   ├── excel_reader.py   # Streaming openpyxl reader (read_only mode)
-│   │   ├── excel_writer.py   # Streaming openpyxl writer
-│   │   └── storage.py        # Storage abstraction (local + Azure Blob placeholder)
-│   │
-│   ├── pipeline/             # Batch processing orchestrator
-│   │   ├── __init__.py
-│   │   ├── runner.py         # PipelineRunner (batch orchestrator, shared DB engine)
-│   │   ├── checkpoint.py     # CheckpointManager for crash recovery
-│   │   ├── results.py        # Result extraction from graph state
-│   │   └── cli.py            # CLI entry point for batch mode
-│   │
-│   ├── db/                   # Database package
-│   │   ├── __init__.py       # SQLAlchemy models + init_db() + get_engine()
-│   │   └── utils.py          # save_result_to_db()
-│   │
-│   └── search/               # Focus-aware search
-│       ├── __init__.py
-│       ├── focus.py          # FocusArea enum, FocusConfig
-│       ├── query_builder.py  # Focus-aware query generation
-│       └── filters.py        # Domain filtering, source scoring
-│
-└── tests/
-    ├── __init__.py
-    └── test_state.py
-```
-
-## Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/Purushothaman-natarajan/scrap_snaps.git
-cd scrap_snaps
-
-# Install with uv (recommended)
-uv sync
-
-# Or with pip
-pip install -e .
-
-# Install Playwright browser (for JS-rendered pages)
-playwright install chromium
-
-# Install ffmpeg (required for video frame extraction)
-# Ubuntu/Debian: sudo apt install ffmpeg
-# macOS: brew install ffmpeg
-# Windows: choco install ffmpeg
-
-# Set up credentials (required)
-cp .env.example .env
-# Edit .env and add your API keys
-
-# All other settings are in config.yaml (edit as needed)
-```
 
 ## Configuration
 
@@ -239,12 +215,7 @@ Configuration uses two files:
 
 **Priority:** env vars > config.yaml > field defaults.
 
-```
-config.yaml          ← single source of truth for all non-credential settings
-  .env               ← credentials only (AZURE_*, SERPAPI_KEY, DATABASE_URL)
-```
-
-### Azure OpenAI (Corporate Gateway) — .env only
+### Azure OpenAI (.env only)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -252,7 +223,10 @@ config.yaml          ← single source of truth for all non-credential settings
 | `AZURE_DEPLOYMENT` | *(required)* | Model deployment identifier |
 | `AZURE_CONSUMER_ID` | *(required)* | Consumer ID for gateway auth |
 
-### Execution
+<details>
+<summary>Full Configuration Reference (click to expand)</summary>
+
+#### Execution
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -273,7 +247,7 @@ config.yaml          ← single source of truth for all non-credential settings
 - `both` — images + videos (full pipeline)
 - `none` — no media collection, specs only
 
-### Networking
+#### Networking
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -281,7 +255,7 @@ config.yaml          ← single source of truth for all non-credential settings
 | `RATE_LIMIT_INTERVAL` | `1.0` | Minimum seconds between HTTP requests |
 | `REQUEST_TIMEOUT` | `10.0` | HTTP request timeout in seconds |
 
-### Scraping
+#### Scraping
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -291,7 +265,7 @@ config.yaml          ← single source of truth for all non-credential settings
 | `MAX_DOWNLOAD_SIZE` | `10485760` | Max image file size in bytes (10MB) |
 | `PLAYWRIGHT_HEADLESS` | `true` | Run browser in headless mode |
 
-### Image Extraction
+#### Image Extraction
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -301,7 +275,7 @@ config.yaml          ← single source of truth for all non-credential settings
 | `IMAGE_ANALYZE_CACHE_TTL` | `3600` | Image analysis cache TTL in seconds |
 | `ANALYZE_CACHE_MAX_SIZE` | `1000` | Max entries in pHash analysis cache (LRU eviction) |
 
-### Video Extraction
+#### Video Extraction
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -318,13 +292,13 @@ config.yaml          ← single source of truth for all non-credential settings
 | `VIDEO_MAX_FRAMES_PER_VIEW` | `2` | Max frames selected per view angle |
 | `VIDEO_AI_SELECTION_MAX_FRAMES` | `12` | Max frames sent to LLM Vision for AI selection |
 
-### Perceptual Hashing
+#### Perceptual Hashing
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PHASH_SIMILARITY_THRESHOLD` | `10` | Hamming distance threshold for fuzzy dedup (lower = stricter) |
 
-### Coverage / Termination
+#### Coverage / Termination
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -332,7 +306,7 @@ config.yaml          ← single source of truth for all non-credential settings
 | `COVERAGE_NO_PROGRESS_THRESHOLD` | `1` | Items added to be considered "no progress" |
 | `COVERAGE_PROXIMITY_RATIO` | `0.8` | When to force-complete based on iteration proximity |
 
-### Search Query Building
+#### Search Query Building
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -340,20 +314,20 @@ config.yaml          ← single source of truth for all non-credential settings
 | `SEARCH_MODIFIERS_PER_AREA` | `2` | Query modifiers per focus area |
 | `SEARCH_QUERIES_PER_TASK` | `2` | Search queries generated per task |
 
-### Search Cache
+#### Search Cache
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SEARCH_CACHE_SIZE` | `500` | Max cached search results per run |
 | `SERPAPI_MAX_HITS_PER_ROW` | `20` | Max SerpAPI calls allowed per row/query |
 
-### Failed URL Tracking
+#### Failed URL Tracking
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FAILED_URL_TTL` | `300` | Seconds before a failed URL is eligible for retry (default 5 min) |
 
-### Verification
+#### Verification
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -362,7 +336,7 @@ config.yaml          ← single source of truth for all non-credential settings
 | `VERIFY_WEIGHT_IMAGE` | `0.30` | Weight for image confidence |
 | `VERIFY_WEIGHT_BASE` | `0.15` | Base score added to all results |
 
-### Logging
+#### Logging
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -370,6 +344,23 @@ config.yaml          ← single source of truth for all non-credential settings
 | `LOG_JSON` | `false` | Output logs as JSON (for production) |
 | `LOG_CAPTURE` | `true` | Log all tool/node/agent I/O to file |
 | `LOG_FILE` | `logs/scrap_snaps.log` | Path to log file |
+
+</details>
+
+### Overriding Settings
+
+Override any YAML setting with an env var:
+
+```bash
+MAX_ITERATIONS=20 scrap-snaps "Sony WH-1000XM5"
+COLLECT_MEDIA=images scrap-snaps-pipeline --input products.xlsx
+```
+
+Set a custom config path:
+
+```bash
+SCRAP_SNAPS_CONFIG=my_config.yaml scrap-snaps "Sony WH-1000XM5"
+```
 
 ## Usage
 
@@ -408,45 +399,79 @@ scrap-snaps-pipeline --config pipeline.json --input products.xlsx
 scrap-snaps-pipeline --input products.xlsx
 ```
 
-### Config File (config.yaml)
+## Output Format
 
-All non-credential settings live in `config.yaml`. Credentials stay in `.env`:
+Single query mode returns JSON with this structure:
 
-```yaml
-# config.yaml
-execution:
-  max_iterations: 15
-  required_views: [front, back, left, right, top, 360_strip, multi_angle_composite]
-
-focus:
-  areas: [product_pages, seller_images, youtube, specs]
-  collect_specs: true
-  collect_media: images_and_video_urls  # images | videos | video_urls | video_frames | images_and_video_urls | both | none
-
-# ... networking, scraping, image, video, search, logging, pipeline sections
-
-pipeline:
-  input_file: input.xlsx
-  output_file: results.xlsx
-  batch_size: 10
+```json
+{
+  "status": "done | partial_complete | failed",
+  "product_name": "Sony WH-1000XM5",
+  "confidence": 0.85,
+  "specifications": {"weight": "250g", "battery": "30h"},
+  "images": [{"url": "...", "local_path": "...", "view": "front", "confidence": 0.95}],
+  "videos": [{"url": "...", "title": "...", "duration": 300}],
+  "missing_views": ["360_strip"],
+  "usage_metrics": {"input_tokens": 12000, "llm_calls": 8, "serpapi_calls": 12}
+}
 ```
 
-Override any YAML setting with an env var:
+| Field | Description |
+|-------|-------------|
+| `status` | `done` (all views+specs collected), `partial_complete` (hit limits), `failed` (error) |
+| `product_name` | Canonical product name from discovery |
+| `confidence` | Overall score 0.0–1.0 from verification |
+| `specifications` | Key-value pairs extracted from web pages |
+| `images` | Array of `{url, local_path, view, confidence}` |
+| `videos` | Array of `{url, title, duration}` |
+| `missing_views` | Views not found after all iterations |
+| `usage_metrics` | Token counts, LLM calls, SerpAPI calls |
 
-```bash
-MAX_ITERATIONS=20 scrap-snaps "Sony WH-1000XM5"
-COLLECT_MEDIA=images scrap-snaps-pipeline --input products.xlsx
+## Extending the Agent
+
+### Adding a New Tool
+
+```python
+from langchain_core.tools import tool
+from src.tools.logging import log_tool_call
+
+@tool
+@log_tool_call
+def my_new_tool(param: str) -> dict:
+    """Tool description for the LLM."""
+    return {"result": "data"}
 ```
 
-Set a custom config path:
+Then import it in the appropriate agent and add the task type to `src/agents/planner.py`.
 
-```bash
-SCRAP_SNAPS_CONFIG=my_config.yaml scrap-snaps "Sony WH-1000XM5"
+### Adding a New Focus Area
+
+1. Add the enum value to `src/search/focus.py`
+2. Add domain mappings in `FocusConfig`
+3. Add query templates in `src/search/query_builder.py`
+
+### Adding a New Agent
+
+```python
+from src.agents.base import BaseAgent
+
+class MyAgent(BaseAgent):
+    def execute(self, state: dict) -> dict:
+        task = state.get("tasks", [{}])[0]
+        result = do_something(task["target"])
+        return {"my_field": result}
 ```
 
-## Tools
+Register it in `src/core/graph.py` with `graph.add_node("my_node", my_node)`.
 
-The agent uses 15 tools organized by domain:
+### Adding a New Database Model
+
+1. Define the model in `src/db/__init__.py` with `Base` and `Product` relationship
+2. Add `save_to_my_model()` utility in `src/db/utils.py`
+
+## Developer Reference
+
+### Tools
 
 | Tool | Module | Description |
 |------|--------|-------------|
@@ -461,12 +486,12 @@ The agent uses 15 tools organized by domain:
 | `analyze_image` | `tools/media/images.py` | Classify product image view type using LLM |
 | `analyze_images_batch` | `tools/media/images.py` | Batch analyze up to 5 images per LLM call |
 | `deduplicate_images` | `tools/media/images.py` | Fuzzy pHash dedup (Hamming distance ≤10) |
-| `download_video` | `tools/media/video.py` | Download YouTube videos via yt-dlp with failure tracking |
+| `download_video` | `tools/media/video.py` | Download YouTube videos via yt-dlp |
 | `extract_frames` | `tools/media/video.py` | Extract key frames using scene detection |
 | `select_best_frames` | `tools/media/video.py` | AI-assisted frame selection using LLM |
 | `save_evidence` | `tools/db/evidence.py` | Persist extracted claims to the database |
 
-## Database
+### Database Models
 
 SQLAlchemy models store all research results:
 
@@ -483,171 +508,7 @@ Default: SQLite at `research.db`. Switch to PostgreSQL:
 DATABASE_URL=postgresql://user:pass@localhost:5432/scrap_snaps
 ```
 
-## Search Cache
-
-Search results are cached in-memory for the duration of a run. This prevents:
-- Retrying the same query when the planner re-discovers the same search terms
-- Wasting SerpAPI quota on duplicate requests within a single graph execution
-
-The cache is keyed on `(engine, normalized_query, num)` with query normalization (lowercase, strip, sorted words). Set `SEARCH_CACHE_SIZE` to control max entries (default 500). Set `SERPAPI_MAX_HITS_PER_ROW` to limit per-row API calls (default 20).
-
-## Failure Tracking
-
-Failed media URLs are tracked with a TTL-based system:
-
-- **Image downloads** — 403/bot/captcha failures are tracked; URL is not retried until TTL expires (default 5 min)
-- **Video downloads** — yt-dlp "sign in" / "blocked" failures are tracked
-- **HTTP layer** — 4xx errors (except 429) are not retried; only transient errors (5xx, connection, timeout) get retries
-- **Shared singleton** — `FailedURLTracker` is shared across all rows in a pipeline run; TTL-based expiry allows retry after cooldown
-
-Failed URLs are propagated through the state (`failed_media_urls`) so the planner knows not to schedule them again.
-
-## Termination Defense
-
-The agent has a 3-layer defense against infinite loops:
-
-1. **Auto-scaled recursion limit** — `recursion_limit` is automatically set to `max(RECURSION_LIMIT, MAX_ITERATIONS * 8)` to ensure the graph has enough headroom
-2. **Coverage agent** — hard cycle limit (`COVERAGE_MAX_CYCLES`, default 10), threshold no-progress (`COVERAGE_NO_PROGRESS_THRESHOLD`, default ≤1 new item), iterations proximity (`COVERAGE_PROXIMITY_RATIO`, default ≥80% of max)
-3. **Planner fingerprint dedup** — if the planner generates identical tasks 2+ cycles in a row, terminates with `partial_complete`
-
-## Extending the Agent
-
-### Adding a New Tool
-
-1. Create a function in the appropriate `src/tools/` module:
-
-```python
-from langchain_core.tools import tool
-from src.tools.logging import log_tool_call
-
-@tool
-@log_tool_call
-def my_new_tool(param: str) -> dict:
-    """Tool description for the LLM."""
-    # Implementation
-    return {"result": "data"}
-```
-
-2. Import and use it in an agent or node. For the planner, add it to the task types:
-
-```python
-# In src/agents/planner.py, add a new task type
-elif task_type == "my_new_task":
-    # Handle new task
-    pass
-```
-
-3. Add the task to the coverage check if it produces data:
-
-```python
-# In src/agents/coverage.py, check for the new data type
-new_items = len(new_data) - prev_data_count
-```
-
-### Adding a New Focus Area
-
-1. Add the enum value to `src/search/focus.py`:
-
-```python
-class FocusArea(str, Enum):
-    NEW_AREA = "new_area"
-```
-
-2. Add domain mappings in `FocusConfig`:
-
-```python
-FOCUS_DOMAINS = {
-    FocusArea.NEW_AREA: ["example.com", "other.com"],
-}
-```
-
-3. Add query templates in `src/search/query_builder.py`:
-
-```python
-elif FocusArea.NEW_AREA in areas:
-    queries.append(f"{query} site:example.com")
-```
-
-### Adding a New Agent
-
-1. Create `src/agents/my_agent.py`:
-
-```python
-from src.agents.base import BaseAgent
-
-class MyAgent(BaseAgent):
-    def execute(self, state: dict) -> dict:
-        # Read from state
-        task = state.get("tasks", [{}])[0]
-
-        # Do work
-        result = do_something(task["target"])
-
-        # Return state updates
-        return {"my_field": result}
-```
-
-2. Create `src/nodes/my_node.py`:
-
-```python
-from src.agents.my_agent import MyAgent
-
-def my_node(state: dict) -> dict:
-    agent = MyAgent()
-    return agent.execute(state)
-```
-
-3. Register in `src/core/graph.py`:
-
-```python
-from src.nodes.my_node import my_node
-
-# In build_graph():
-graph.add_node("my_node", my_node)
-```
-
-### Adding a New Database Model
-
-1. Add to `src/db/__init__.py`:
-
-```python
-class MyModel(Base):
-    __tablename__ = "my_table"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    my_field = Column(String(500), default="")
-```
-
-2. Add relationship to `Product`:
-
-```python
-product = relationship("Product", back_populates="my_models")
-```
-
-3. Add `save_to_my_model()` utility in `src/db/utils.py`.
-
-### Adding a New Pipeline Output Format
-
-1. Create `src/io/my_format.py`:
-
-```python
-def write_my_format(output_path: str, results: list[dict]) -> None:
-    # Write results in your format
-    pass
-```
-
-2. Register in `src/pipeline/cli.py`:
-
-```python
-if args.format == "my_format":
-    from src.io.my_format import write_my_format
-    write_my_format(args.output, results)
-```
-
-## Cost Optimization
-
-The agent includes several cost optimization strategies:
+### Cost Optimization
 
 | Optimization | Impact | Implementation |
 |-------------|--------|----------------|
@@ -660,79 +521,6 @@ The agent includes several cost optimization strategies:
 | Wider frame intervals | Fewer frames to analyze | 5s default (configurable) |
 | Lower JPEG quality | Smaller files, faster I/O | Quality 85 (configurable) |
 | Shared DB engine | Fewer connection overhead | Engine created once per pipeline run |
-
-## Developer Guide
-
-### Quick Start
-
-```python
-from src.core.graph import build_graph
-from src.search.focus import get_focus_config
-from src.state import create_initial_state
-from src.tools.usage import get_usage_tracker
-from src.tools.web.cache import get_search_cache
-
-graph = build_graph()
-focus = get_focus_config("product_pages,seller_images")
-
-# Clear cache and tracker for this run
-get_search_cache().clear()
-tracker = get_usage_tracker()
-tracker.reset()
-tracker.start()
-
-initial_state = create_initial_state(
-    query="Sony WH-1000XM5",
-    focus_areas=[a.value for a in focus.areas],
-    focus_config=focus.to_dict(),
-    collect_specs=True,
-    collect_media="both",
-    max_iterations=15,
-)
-
-for event in graph.stream(initial_state, {"recursion_limit": 200}):
-    for key, value in event.items():
-        print(f"Finished: {key}")
-
-# Get usage stats
-usage = tracker.get_stats(search_cache_stats=get_search_cache().stats)
-print(f"Tokens: {usage['input_tokens']} in / {usage['output_tokens']} out")
-```
-
-### Configuration
-
-Settings are loaded from `config.yaml` (non-credential) + `.env` (credentials):
-
-```python
-from src.config import settings, COLLECT_SPECS, COLLECT_MEDIA, SEARCH_CACHE_SIZE
-
-print(settings.azure_endpoint)  # from .env
-print(COLLECT_SPECS)            # True (from config.yaml)
-print(COLLECT_MEDIA)            # "both" (from config.yaml)
-print(SEARCH_CACHE_SIZE)        # 500 (from config.yaml)
-```
-
-Pipeline config from the `pipeline:` section of config.yaml:
-
-```python
-from src.pipeline.runner import PipelineConfig
-
-config = PipelineConfig.from_yaml("config.yaml")
-print(config.input_file)    # "input.xlsx"
-print(config.batch_size)    # 10
-```
-
-### LLM Client
-
-Corporate Azure gateway with custom auth headers:
-
-```python
-from src.llm import get_llm, get_vision_llm, clear_llm_cache
-
-llm = get_llm(temperature=0.0)
-vision_llm = get_vision_llm(temperature=0.0)
-clear_llm_cache()  # For testing or config changes
-```
 
 ### Testing & Linting
 
