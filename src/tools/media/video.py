@@ -19,6 +19,8 @@ All thresholds are configurable via settings:
 import base64
 import json
 import os
+import re
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
@@ -106,22 +108,36 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str =
         logger.debug("Skipping previously failed video URL: %s", url)
         return ""
 
-    os.makedirs(save_dir, exist_ok=True)
+    # Sanitize filename to block traversal
+    if filename:
+        base_name = Path(os.path.splitext(filename)[0]).name
+        base_name = re.sub(r"[^a-zA-Z0-9_-]", "_", base_name)[:80].lstrip("._")
+        if not base_name:
+            base_name = "video"
+    save_dir_path = Path(save_dir).resolve()
+    os.makedirs(save_dir_path, exist_ok=True)
 
     try:
         import yt_dlp
 
         if filename:
-            # Use custom filename - strip extension if provided
-            base_name = os.path.splitext(filename)[0]
-            output_template = os.path.join(save_dir, f"{base_name}.%(ext)s")
+            output_template = str(save_dir_path / f"{base_name}.%(ext)s")
+            # Validate template is inside save_dir
+            if not str(Path(output_template).resolve()).startswith(str(save_dir_path)):
+                logger.warning("Path traversal blocked for video filename: %s", filename)
+                return ""
         else:
-            output_template = os.path.join(save_dir, "%(id)s.%(ext)s")
+            output_template = str(save_dir_path / "%(id)s.%(ext)s")
 
         format_str = (
             f"bestvideo[height<={VIDEO_MAX_RESOLUTION}]"
             f"+bestaudio/best[height<={VIDEO_MAX_RESOLUTION}]"
         )
+        # Validate resolution is int to block injection
+        try:
+            int(VIDEO_MAX_RESOLUTION)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid VIDEO_MAX_RESOLUTION: {VIDEO_MAX_RESOLUTION}")
         ydl_opts = {
             "format": format_str,
             "outtmpl": output_template,
@@ -130,6 +146,7 @@ def download_video(url: str, save_dir: str = VIDEO_DOWNLOAD_DIR, filename: str =
             "sleep_interval": 3,
             "max_sleep_interval": 10,
             "merge_output_format": "mp4",
+            "noplaylist": True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -186,56 +203,60 @@ def extract_frames(video_path: str, output_dir: str = "downloads/frames") -> lis
         scenes = detect(video_path, ContentDetector(threshold=VIDEO_SCENE_THRESHOLD))
 
         cap = cv2.VideoCapture(video_path)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        if fps <= 0 or total_frames <= 0:
-            logger.error("Invalid video: fps=%s, frames=%s", fps, total_frames)
-            cap.release()
-            return []
+            if fps <= 0 or total_frames <= 0:
+                logger.error("Invalid video: fps=%s, frames=%s", fps, total_frames)
+                return []
 
-        frame_paths = []
-        extracted_hashes = set()
+            frame_paths = []
+            extracted_hashes = set()
 
-        def _extract_and_save(frame_num: int) -> str | None:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-            ret, frame = cap.read()
-            if not ret:
-                return None
+            def _extract_and_save(frame_num: int) -> str | None:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                ret, frame = cap.read()
+                if not ret:
+                    return None
 
-            pil_img = PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            h = imagehash.phash(pil_img)
-            h_str = str(h)
-            if h_str in extracted_hashes:
-                return None
-            extracted_hashes.add(h_str)
+                pil_img = PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                h = imagehash.phash(pil_img)
+                h_str = str(h)
+                if h_str in extracted_hashes:
+                    return None
+                extracted_hashes.add(h_str)
 
-            frame_path = os.path.join(output_dir, f"frame_{frame_num:06d}.jpg")
-            cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, VIDEO_FRAME_JPEG_QUALITY])
-            return frame_path
+                frame_path = os.path.join(output_dir, f"frame_{frame_num:06d}.jpg")
+                cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, VIDEO_FRAME_JPEG_QUALITY])
+                return frame_path
 
-        logger.info("Found %d scenes, extracting frames", len(scenes))
-        for start_time, end_time in scenes:
-            start_frame = int(start_time.get_seconds() * fps)
-            end_frame = int(end_time.get_seconds() * fps)
-            mid_frame = (start_frame + end_frame) // 2
+            logger.info("Found %d scenes, extracting frames", len(scenes))
+            for start_time, end_time in scenes:
+                start_frame = int(start_time.get_seconds() * fps)
+                end_frame = int(end_time.get_seconds() * fps)
+                mid_frame = (start_frame + end_frame) // 2
 
-            path = _extract_and_save(mid_frame)
-            if path:
-                frame_paths.append(path)
+                path = _extract_and_save(mid_frame)
+                if path:
+                    frame_paths.append(path)
 
-            scene_duration_sec = end_time.get_seconds() - start_time.get_seconds()
-            if scene_duration_sec > VIDEO_FRAME_INTERVAL * 2:
-                interval_frames = int(VIDEO_FRAME_INTERVAL * fps)
-                for f in range(start_frame + interval_frames, end_frame, interval_frames):
-                    if f != mid_frame:
-                        path = _extract_and_save(f)
-                        if path:
-                            frame_paths.append(path)
+                scene_duration_sec = end_time.get_seconds() - start_time.get_seconds()
+                if scene_duration_sec > VIDEO_FRAME_INTERVAL * 2:
+                    interval_frames = int(VIDEO_FRAME_INTERVAL * fps)
+                    for f in range(start_frame + interval_frames, end_frame, interval_frames):
+                        if f != mid_frame:
+                            path = _extract_and_save(f)
+                            if path:
+                                frame_paths.append(path)
 
-        cap.release()
-        logger.info("Extracted %d unique frames from %s", len(frame_paths), video_path)
-        return frame_paths
+            logger.info("Extracted %d unique frames from %s", len(frame_paths), video_path)
+            return frame_paths
+        finally:
+            try:
+                cap.release()
+            except Exception:
+                pass
 
     except ImportError as e:
         logger.error("Missing dependency for frame extraction: %s", e)

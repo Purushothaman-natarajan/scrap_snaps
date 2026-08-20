@@ -94,11 +94,17 @@ def run_research(
     )
 
     logger.info("--- Execution Trace ---")
-    final_state = None
-    for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
-        for key, value in event.items():
-            logger.info("Finished Node: %s", key)
-            final_state = value
+    final_state: dict = dict(initial_state)
+    try:
+        for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
+            for key, value in event.items():
+                logger.info("Finished Node: %s", key)
+                if value:
+                    final_state.update(value)
+    except Exception as e:
+        logger.exception("Graph stream failed: %s", e)
+        final_state["status"] = "failed"
+        final_state["error"] = str(e)
 
     logger.info("--- Research Complete ---")
 
@@ -112,8 +118,14 @@ def run_research(
 
     usage_metrics = tracker.get_stats(search_cache_stats=cache_stats)
 
-    # Build result — fallback if graph produced no output
-    if final_state:
+    # Build result — fallback only if graph truly produced no data
+    _ok_statuses = ("done", "partial_complete", "complete", "max_iterations_reached")
+    has_data = bool(
+        final_state.get("images")
+        or final_state.get("specifications")
+        or final_state.get("status") in _ok_statuses
+    )
+    if has_data:
         result = extract_result(final_state, usage_metrics=usage_metrics)
     else:
         logger.warning("Graph produced no output — saving fallback result")

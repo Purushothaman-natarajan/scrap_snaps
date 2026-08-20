@@ -66,17 +66,21 @@ def fetch_page_js(url: str, wait_selector: str = "body") -> str:
 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=PLAYWRIGHT_HEADLESS)
-            page = browser.new_page(user_agent=USER_AGENT)
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=PLAYWRIGHT_NAV_TIMEOUT)
-                page.wait_for_selector(wait_selector, timeout=PLAYWRIGHT_SELECTOR_TIMEOUT)
-            except PlaywrightTimeout as e:
-                logger.warning("Playwright timeout for %s: %s", url, e)
-                browser.close()
-                return fetch_page.invoke({"url": url})
+                page = browser.new_page(user_agent=USER_AGENT)
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=PLAYWRIGHT_NAV_TIMEOUT)
+                    page.wait_for_selector(wait_selector, timeout=PLAYWRIGHT_SELECTOR_TIMEOUT)
+                except PlaywrightTimeout as e:
+                    logger.warning("Playwright timeout for %s: %s", url, e)
+                    return fetch_page.invoke({"url": url})
 
-            content = page.content()
-            browser.close()
+                content = page.content()
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
         soup = BeautifulSoup(content, "html.parser")
 

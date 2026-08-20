@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 
 class StorageBackend(ABC):
@@ -37,20 +38,32 @@ class LocalStorage(StorageBackend):
         self.base_dir = base_dir
         os.makedirs(base_dir, exist_ok=True)
 
-    def save(self, local_path: str, remote_key: str) -> str:
-        """Copy file to local storage directory."""
-        dest = os.path.join(self.base_dir, remote_key)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if local_path != dest:
-            import shutil
-            shutil.copy2(local_path, dest)
+    def _safe_dest(self, remote_key: str) -> Path:
+        """Resolve dest inside base_dir, block traversal."""
+        base = Path(self.base_dir).resolve()
+        dest = (base / remote_key).resolve()
+        if not str(dest).startswith(str(base)):
+            raise ValueError(f"Path traversal blocked: {remote_key}")
         return dest
 
+    def save(self, local_path: str, remote_key: str) -> str:
+        """Copy file to local storage directory."""
+        dest = self._safe_dest(remote_key)
+        os.makedirs(os.path.dirname(str(dest)), exist_ok=True)
+        if str(local_path) != str(dest):
+            import shutil
+            shutil.copy2(local_path, str(dest))
+        return str(dest)
+
     def exists(self, remote_key: str) -> bool:
-        return os.path.exists(os.path.join(self.base_dir, remote_key))
+        try:
+            dest = self._safe_dest(remote_key)
+        except ValueError:
+            return False
+        return os.path.exists(dest)
 
     def load(self, remote_key: str, local_path: str) -> str:
-        src = os.path.join(self.base_dir, remote_key)
+        src = self._safe_dest(remote_key)
         if os.path.exists(src):
             import shutil
             shutil.copy2(src, local_path)

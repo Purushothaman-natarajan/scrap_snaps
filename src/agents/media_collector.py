@@ -147,8 +147,8 @@ class MediaAgent(BaseAgent):
 
         results = search_images.invoke({"query": search_q, "limit": MAX_IMAGE_RESULTS})
 
-        images_list = state.get("images", [])
-        discovered_views = state.get("discovered_views", {})
+        images_list = list(state.get("images", []))
+        discovered_views = {k: list(v) for k, v in state.get("discovered_views", {}).items()}
 
         if results:
             # Phase 1: Download and collect all candidate paths
@@ -283,8 +283,8 @@ class MediaAgent(BaseAgent):
         selected_videos = videos[:MAX_VIDEO_RESULTS]
         self.logger.info("Selected %d videos for processing", len(selected_videos))
 
-        images_list = state.get("images", [])
-        discovered_views = state.get("discovered_views", {})
+        images_list = list(state.get("images", []))
+        discovered_views = {k: list(v) for k, v in state.get("discovered_views", {}).items()}
         existing_video_urls = {v.get("url", "") for v in state.get("videos", [])}
         all_frame_paths = []
 

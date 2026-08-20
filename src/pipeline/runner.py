@@ -162,13 +162,26 @@ class PipelineRunner:
                     write_row_result(config.output_file, result)
 
                     # Save to database using a row-specific session
+                    session = None
                     try:
                         session = get_session(db_engine)
                         product_id = save_result_to_db(result, session=session)
                         if product_id:
                             save_run_metrics(product_id, usage_metrics, session=session)
+                        session.commit()
                     except Exception as db_err:
                         logger.warning("Failed to save to DB for row %d: %s", row_idx, db_err)
+                        if session is not None:
+                            try:
+                                session.rollback()
+                            except Exception:
+                                pass
+                    finally:
+                        if session is not None:
+                            try:
+                                session.close()
+                            except Exception:
+                                pass
 
                     self.checkpoint_mgr.mark_completed(checkpoint, row_idx)
                     summary["processed"] += 1
@@ -230,18 +243,31 @@ class PipelineRunner:
             max_iterations=config.max_iterations,
         )
 
-        final_state = None
+        final_state: dict = dict(initial_state)
         safe_recursion_limit = max(RECURSION_LIMIT, config.max_iterations * 8)
-        for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
-            for key, value in event.items():
-                final_state = value
+        try:
+            for event in graph.stream(initial_state, {"recursion_limit": safe_recursion_limit}):
+                for key, value in event.items():
+                    if value:
+                        final_state.update(value)
+        except Exception as e:
+            row_idx = row_data.get("__row_index", 0)
+            logger.exception("Graph stream failed for row %s: %s", row_idx, e)
+            final_state["status"] = "failed"
+            final_state["error"] = str(e)
 
-        if final_state is None:
+        _ok_statuses = ("done", "partial_complete", "complete", "max_iterations_reached")
+        has_data = bool(
+            final_state.get("images")
+            or final_state.get("specifications")
+            or final_state.get("status") in _ok_statuses
+        )
+        if not has_data:
             return {
                 "row_index": row_data.get("__row_index", 0),
                 "product_name": query,
                 "status": "failed",
-                "error": "Graph produced no output",
+                "error": "Graph produced no output (recursion limit or crash)",
             }
 
         return extract_result_for_row(row_data, final_state)

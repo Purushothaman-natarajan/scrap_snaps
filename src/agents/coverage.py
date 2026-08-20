@@ -193,8 +193,9 @@ class CoverageAgent(BaseAgent):
         has_youtube_focus = focus and FocusArea.YOUTUBE in focus.areas
         has_specs_focus = focus and FocusArea.SPECS in focus.areas
 
-        # YouTube focus: only force video extraction if YouTube hasn't failed
-        if has_youtube_focus:
+        # YouTube focus: only force video extraction if collect_media allows it
+        # Respects config.yaml `collect_media` (e.g. images_and_video_urls, images, none)
+        if has_youtube_focus and collect_media not in (None, "none", "images"):
             video_images = [
                 img for img in state.get("images", [])
                 if img.get("source") == "video"
@@ -209,6 +210,11 @@ class CoverageAgent(BaseAgent):
             elif not video_images and missing_views:
                 if "find_videos" not in [t.get("type") for t in state.get("tasks", [])]:
                     self.logger.info("YouTube focus: forcing video extraction")
+        elif has_youtube_focus and collect_media in (None, "none", "images"):
+            self.logger.info(
+                "YouTube focus ignored — collect_media=%s does not allow video",
+                collect_media,
+            )
 
         if has_specs_focus:
             if len(specs) < 3:

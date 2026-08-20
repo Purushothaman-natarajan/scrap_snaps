@@ -27,8 +27,12 @@ def perceptual_hash(image_path: str) -> str | None:
     if not image_path or not os.path.exists(image_path):
         return None
     try:
-        img = PILImage.open(image_path)
-        return str(imagehash.phash(img))
+        with PILImage.open(image_path) as img:
+            img.load()
+            # Convert to RGB for consistent hashing across modes
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            return str(imagehash.phash(img))
     except Exception as e:
         logger.warning("Error computing pHash for %s: %s", image_path, e)
         return None

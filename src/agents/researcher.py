@@ -138,8 +138,8 @@ class ResearchAgent(BaseAgent):
 
         results = search_web.invoke({"query": search_q})
 
-        evidence_list = state.get("evidence", [])
-        specs = state.get("specifications", {})
+        evidence_list = list(state.get("evidence", []))
+        specs = dict(state.get("specifications", {}))
 
         if results:
             url = results[0].get("url")

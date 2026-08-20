@@ -71,7 +71,7 @@ COLUMN_WIDTHS = {
 
 
 def _ensure_workbook(file_path: str | Path) -> None:
-    """Create workbook with headers if it doesn't exist."""
+    """Create workbook with headers if it doesn't exist (atomic)."""
     if os.path.exists(file_path):
         return
 
@@ -87,17 +87,28 @@ def _ensure_workbook(file_path: str | Path) -> None:
     for col_letter, width in COLUMN_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
 
-    wb.save(file_path)
+    # Atomic save to avoid 0-byte file on crash
+    tmp = str(file_path) + ".tmp"
+    wb.save(tmp)
     wb.close()
+    os.replace(tmp, file_path)
 
 
 def _serialize_value(value) -> str:
-    """Serialize a value for Excel storage."""
+    """Serialize a value for Excel storage with formula-injection sanitization."""
     if isinstance(value, (list, dict)):
-        return json.dumps(value, default=str)
-    if value is None:
+        text = json.dumps(value, default=str)
+    elif value is None:
         return ""
-    return str(value)
+    else:
+        text = str(value)
+    # Prevent Excel formula injection (=, +, -, @, pipe). Prefix with single quote.
+    if text and text[0] in ("=", "+", "-", "@", "|", "\t", "\r"):
+        text = "'" + text
+    # Also escape leading whitespace + formula (e.g. " =cmd")
+    elif text.lstrip() and text.lstrip()[0] in ("=", "+", "-", "@"):
+        text = "'" + text
+    return text
 
 
 def write_row_result(file_path: str | Path, result: dict) -> None:
@@ -117,10 +128,16 @@ def write_row_result(file_path: str | Path, result: dict) -> None:
 
     for col, key in enumerate(RESULT_COLUMNS, start=1):
         value = result.get(key, "")
-        ws.cell(row=next_row, column=col, value=_serialize_value(value))
+        # Keep numeric types as numbers for Excel pivots; sanitize strings
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            ws.cell(row=next_row, column=col, value=value)
+        else:
+            ws.cell(row=next_row, column=col, value=_serialize_value(value))
 
-    wb.save(file_path)
+    tmp = str(file_path) + ".tmp"
+    wb.save(tmp)
     wb.close()
+    os.replace(tmp, file_path)
 
 
 def write_row_results(file_path: str | Path, results: list[dict]) -> None:
@@ -144,8 +161,13 @@ def write_row_results(file_path: str | Path, results: list[dict]) -> None:
     for result in results:
         for col, key in enumerate(RESULT_COLUMNS, start=1):
             value = result.get(key, "")
-            ws.cell(row=next_row, column=col, value=_serialize_value(value))
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                ws.cell(row=next_row, column=col, value=value)
+            else:
+                ws.cell(row=next_row, column=col, value=_serialize_value(value))
         next_row += 1
 
-    wb.save(file_path)
+    tmp = str(file_path) + ".tmp"
+    wb.save(tmp)
     wb.close()
+    os.replace(tmp, file_path)

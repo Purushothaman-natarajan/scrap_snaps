@@ -31,14 +31,14 @@ class FailedURLTracker:
     """
 
     def __init__(self, ttl: float = FAILED_URL_TTL, persist_path: str | None = None) -> None:
-        self._urls: dict[str, float] = {}  # url -> monotonic timestamp
+        self._urls: dict[str, float] = {}  # url -> wall-clock timestamp (time.time)
         self._ttl = ttl
         self._persist_path = persist_path or _DEFAULT_PERSIST_PATH
         self._load_from_file()
 
     def add(self, url: str) -> None:
         """Record a URL as failed and persist to disk."""
-        self._urls[url] = time.monotonic()
+        self._urls[url] = time.time()
         self._save_to_file()
 
     def is_failed(self, url: str) -> bool:
@@ -46,7 +46,7 @@ class FailedURLTracker:
         if url not in self._urls:
             return False
         ts = self._urls[url]
-        if time.monotonic() - ts >= self._ttl:
+        if time.time() - ts >= self._ttl:
             del self._urls[url]
             self._save_to_file()
             logger.debug("Failed URL TTL expired, allowing retry: %s", url)
@@ -55,7 +55,7 @@ class FailedURLTracker:
 
     def get_all(self) -> set[str]:
         """Return all currently failed (non-expired) URLs."""
-        now = time.monotonic()
+        now = time.time()
         expired = [url for url, ts in self._urls.items() if now - ts >= self._ttl]
         for url in expired:
             del self._urls[url]
@@ -65,7 +65,7 @@ class FailedURLTracker:
 
     def load(self, urls: list[str]) -> None:
         """Load URLs into the tracker (e.g., from state)."""
-        now = time.monotonic()
+        now = time.time()
         changed = False
         for url in urls:
             if url not in self._urls:
@@ -93,7 +93,7 @@ class FailedURLTracker:
             data = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 return
-            now = time.monotonic()
+            now = time.time()
             loaded = 0
             for url, ts in data.items():
                 if isinstance(ts, (int, float)) and now - ts < self._ttl:
@@ -105,11 +105,13 @@ class FailedURLTracker:
             logger.warning("Failed to load failed URLs from %s: %s", self._persist_path, e)
 
     def _save_to_file(self) -> None:
-        """Persist current failed URLs to disk."""
+        """Persist current failed URLs to disk (atomic)."""
         path = Path(self._persist_path)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(self._urls, indent=2), encoding="utf-8")
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(self._urls, indent=2), encoding="utf-8")
+            tmp.replace(path)
         except Exception as e:
             logger.warning("Failed to save failed URLs to %s: %s", self._persist_path, e)
 

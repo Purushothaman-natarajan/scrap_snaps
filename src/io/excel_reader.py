@@ -29,38 +29,51 @@ def read_excel_rows(
     Yields:
         List of dicts, one per row, keyed by header names.
     """
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >=1, got {batch_size}")
+    if header_row < 1:
+        raise ValueError(f"header_row must be >=1, got {header_row}")
+
     wb = load_workbook(file_path, read_only=True, data_only=True)
-    ws = wb[sheet] if sheet else wb.active
+    try:
+        try:
+            ws = wb[sheet] if sheet else wb.active
+        except KeyError:
+            wb.close()
+            raise ValueError(f"Sheet '{sheet}' not found")
 
-    headers = []
-    batch = []
+        headers = []
+        batch = []
 
-    for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
-        if i == header_row:
-            headers = [str(h) if h is not None else f"col_{j}" for j, h in enumerate(row)]
-            continue
+        for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            if i == header_row:
+                headers = [str(h) if h is not None else f"col_{j}" for j, h in enumerate(row)]
+                continue
 
-        if i < header_row:
-            continue
+            if i < header_row:
+                continue
 
-        if not any(row):
-            continue
+            if not any(row):
+                continue
 
-        row_dict = {}
-        for j, val in enumerate(row):
-            key = headers[j] if j < len(headers) else f"col_{j}"
-            row_dict[key] = val
-        row_dict["__row_index"] = i
+            row_dict = {}
+            for j, val in enumerate(row):
+                key = headers[j] if j < len(headers) else f"col_{j}"
+                row_dict[key] = val
+            row_dict["__row_index"] = i
 
-        batch.append(row_dict)
-        if len(batch) >= batch_size:
+            batch.append(row_dict)
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+
+        if batch:
             yield batch
-            batch = []
-
-    if batch:
-        yield batch
-
-    wb.close()
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
 
 
 def get_row_count(file_path: str | Path, sheet: str | None = None) -> int:
