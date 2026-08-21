@@ -210,6 +210,10 @@ def get_pipeline_config(path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any
     env_overrides = {
         "INPUT_FILE": "input_file",
         "OUTPUT_FILE": "output_file",
+        "QUERY_COLUMN": "query_column",
+        "QUERY_COLUMNS_FALLBACK": "query_columns_fallback",
+        "CSV_DELIMITER": "csv_delimiter",
+        "CSV_ENCODING": "csv_encoding",
         "BATCH_SIZE": "batch_size",
         "COLLECT_MEDIA": "collect_media",
         "COLLECT_SPECS": "collect_specs",

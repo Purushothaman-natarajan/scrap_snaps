@@ -144,10 +144,15 @@ logging:
 # Pipeline (batch mode — used by scrap-snaps-pipeline CLI)
 # =============================================================================
 pipeline:
-  input_file: input.xlsx
-  output_file: results.xlsx
-  sheet: null
-  header_row: 1
+  input_file: input.xlsx       # .xlsx, .xls, or .csv — auto-detected by extension
+  output_file: results.xlsx    # always Excel (even for CSV input)
+  query_column: ""             # header name for item description (e.g. "item description", "Product Name")
+                               # user provides per file via --query-column or config; empty → fallback auto-detect
+  query_columns_fallback: ""   # comma-separated fallback columns if query_column missing (e.g. "product,query")
+  sheet: null                  # Excel only: sheet name (ignored for CSV)
+  header_row: 1                # row number containing headers (1-indexed, Excel & CSV)
+  csv_delimiter: auto          # CSV only: auto, ,, ;, \t, |  (auto uses Sniffer)
+  csv_encoding: utf-8          # CSV only: utf-8, utf-8-sig (BOM), latin1 fallback
   batch_size: 10
   collect_specs: true
   collect_media: images_and_video_urls

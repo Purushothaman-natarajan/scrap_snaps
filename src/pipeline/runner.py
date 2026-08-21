@@ -24,7 +24,8 @@ from src.config.yaml_loader import DEFAULT_CONFIG_PATH, get_pipeline_config
 from src.db import get_engine, get_session
 from src.db.utils import save_result_to_db, save_run_metrics
 from src.graph import build_graph
-from src.io import get_storage, read_excel_rows, write_row_result
+from src.io import get_storage, write_row_result
+from src.io.reader import get_row_count_unified, read_rows
 from src.pipeline.checkpoint import CheckpointData, CheckpointManager
 from src.pipeline.results import extract_result_for_row
 from src.search.focus import get_focus_config
@@ -41,8 +42,12 @@ class PipelineConfig:
 
     input_file: str
     output_file: str = ""
+    query_column: str = ""  # dynamic header for item description (e.g. "item description")
+    query_columns_fallback: str = ""  # comma list if primary missing
     sheet: str | None = None
     header_row: int = 1
+    csv_delimiter: str = "auto"
+    csv_encoding: str = "utf-8"
     batch_size: int = 10
     collect_specs: bool = True
     collect_media: str = "images_and_video_urls"
@@ -130,11 +135,13 @@ class PipelineRunner:
         # Create shared DB engine once for all rows
         db_engine = get_engine(DATABASE_URL)
 
-        for batch in read_excel_rows(
+        for batch in read_rows(
             config.input_file,
             sheet=config.sheet,
             header_row=config.header_row,
             batch_size=config.batch_size,
+            delimiter=config.csv_delimiter,
+            encoding=config.csv_encoding,
         ):
             for row_data in batch:
                 row_idx = row_data.get("__row_index", 0)
@@ -229,7 +236,7 @@ class PipelineRunner:
 
     def _process_row(self, row_data: dict, config: PipelineConfig, db_engine=None) -> dict:
         """Process a single row through the research graph."""
-        query = self._extract_query(row_data)
+        query = self._extract_query(row_data, config)
         if not query:
             return {
                 "row_index": row_data.get("__row_index", 0),
@@ -292,15 +299,50 @@ class PipelineRunner:
 
         return extract_result_for_row(row_data, final_state)
 
-    def _extract_query(self, row_data: dict) -> str:
-        """Extract product query from a row dict."""
+    def _extract_query(self, row_data: dict, config: PipelineConfig | None = None) -> str:
+        """Extract product query from a row dict using dynamic query_column."""
+
+        def _norm(s: str) -> str:
+            return str(s).strip().lower().replace("_", " ").replace("  ", " ").strip()
+
+        # 1) Try dynamic query_column (case/space/underscore-insensitive)
+        if config and config.query_column and config.query_column.strip():
+            target_norm = _norm(config.query_column)
+            for k, v in row_data.items():
+                if k.startswith("__"):
+                    continue
+                if _norm(k) == target_norm and v is not None and str(v).strip():
+                    return str(v).strip()
+            # Try fallback list from config
+            if config.query_columns_fallback and config.query_columns_fallback.strip():
+                for fb in [c.strip() for c in config.query_columns_fallback.split(",") if c.strip()]:
+                    fb_norm = _norm(fb)
+                    for k, v in row_data.items():
+                        if k.startswith("__"):
+                            continue
+                        if _norm(k) == fb_norm and v is not None and str(v).strip():
+                            return str(v).strip()
+            logger.warning(
+                "query_column '%s' not found. Available: %s",
+                config.query_column,
+                [k for k in row_data.keys() if not k.startswith("__")][:10],
+            )
+
+        # 2) Legacy hard-coded fallback
         for key in ["product", "query", "name", "title", "item", "product_name"]:
-            if key in row_data and row_data[key]:
+            if key in row_data and row_data[key] is not None and str(row_data[key]).strip():
                 return str(row_data[key]).strip()
+        # 3) Case-insensitive legacy try
+        legacy_norms = { _norm(k): k for k in row_data.keys() if not k.startswith("__")}
+        for key in ["product", "query", "name", "title", "item", "product_name"]:
+            if _norm(key) in legacy_norms:
+                orig = legacy_norms[_norm(key)]
+                v = row_data.get(orig)
+                if v is not None and str(v).strip():
+                    return str(v).strip()
         return ""
 
     def _estimate_rows(self, config: PipelineConfig) -> int:
         """Estimate total row count without loading all data."""
-        from src.io.excel_reader import get_row_count
-        total = get_row_count(config.input_file, config.sheet)
+        total = get_row_count_unified(config.input_file, sheet=config.sheet, encoding=config.csv_encoding)
         return max(0, total - config.header_row)

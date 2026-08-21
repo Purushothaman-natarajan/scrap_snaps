@@ -24,7 +24,7 @@ def main():
     parser.add_argument(
         "--input", "-i",
         default=None,
-        help="Input Excel file path (overrides config.yaml pipeline.input_file)",
+        help="Input file path (.xlsx, .csv) (overrides config.yaml pipeline.input_file)",
     )
     parser.add_argument(
         "--output", "-o",
@@ -39,7 +39,28 @@ def main():
     parser.add_argument(
         "--sheet",
         default=None,
-        help="Sheet name to read from",
+        help="Sheet name to read from (Excel only, ignored for CSV)",
+    )
+    parser.add_argument(
+        "--query-column", "--qc",
+        dest="query_column",
+        default=None,
+        help='Header name for item description column (e.g. "item description")',
+    )
+    parser.add_argument(
+        "--query-columns-fallback",
+        default=None,
+        help='Comma-separated fallback columns (e.g. "product,query")',
+    )
+    parser.add_argument(
+        "--csv-delimiter",
+        default=None,
+        help='CSV delimiter: auto, ,, ;, tab (default: auto)',
+    )
+    parser.add_argument(
+        "--csv-encoding",
+        default=None,
+        help='CSV encoding: utf-8, utf-8-sig, latin1 (default: utf-8)',
     )
     parser.add_argument(
         "--header-row",
@@ -124,6 +145,14 @@ def main():
         config.output_file = args.output
     if args.sheet:
         config.sheet = args.sheet
+    if args.query_column:
+        config.query_column = args.query_column
+    if args.query_columns_fallback:
+        config.query_columns_fallback = args.query_columns_fallback
+    if args.csv_delimiter:
+        config.csv_delimiter = args.csv_delimiter
+    if args.csv_encoding:
+        config.csv_encoding = args.csv_encoding
     if args.header_row is not None:
         config.header_row = args.header_row
     if args.batch_size is not None:
